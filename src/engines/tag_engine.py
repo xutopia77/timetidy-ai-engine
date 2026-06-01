@@ -5,12 +5,12 @@ import numpy as np
 from PIL import Image
 import onnxruntime as ort
 from engines.base import BaseEngine
+import config
 
 MODEL_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "models")
 VISION_MODEL_FILENAME = "clip_vision.onnx"
 VOCAB_FILENAME = "tag_vocab.json"
 EMBEDDINGS_FILENAME = "tag_embeddings.npz"
-DEFAULT_MODEL_URL = "https://hf-mirror.com/timetidy/clip-vision-onnx/resolve/main/clip_vision.onnx"
 
 CLIP_IMAGE_MEAN = np.array([0.48145466, 0.4578275, 0.40821073], dtype=np.float32)
 CLIP_IMAGE_STD = np.array([0.26862954, 0.26130258, 0.27577711], dtype=np.float32)
@@ -45,7 +45,14 @@ class TagEngine(BaseEngine):
             )
 
         if not os.path.exists(self._vision_model_path):
-            self._download_model()
+            if config.ALLOW_MODEL_DOWNLOAD:
+                self._download_model()
+            else:
+                raise FileNotFoundError(
+                    f"Vision model file not found: {self._vision_model_path}\n"
+                    f"Please run: python export_clip_onnx.py\n"
+                    f"Or set ALLOW_MODEL_DOWNLOAD=true in config.py to enable automatic download"
+                )
 
         self._vision_session = ort.InferenceSession(
             self._vision_model_path,
@@ -79,7 +86,7 @@ class TagEngine(BaseEngine):
     def _download_model(self):
         import urllib.request
 
-        base_url = os.environ.get("MODEL_BASE_URL", DEFAULT_MODEL_URL)
+        base_url = os.environ.get("MODEL_BASE_URL", config.MODEL_BASE_URL)
         if base_url.endswith("/"):
             url = base_url + VISION_MODEL_FILENAME
         else:

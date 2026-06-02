@@ -154,6 +154,8 @@ def generate_markdown_report(test_results: Dict, output_path: str, test_data_dir
     search_results = test_results.get("search", {})
     tag_results = test_results.get("tag_detect", {})
     sync_result = test_results.get("sync", {})
+    find_similar_result = test_results.get("find_similar", {})
+    detect_groups_result = test_results.get("detect_similar_groups", {})
     
     lines.append("| Test | Status | Details |")
     lines.append("|------|--------|---------|")
@@ -183,6 +185,17 @@ def generate_markdown_report(test_results: Dict, output_path: str, test_data_dir
     skipped_files = sync_result.get("data", {}).get("skipped_files", 0)
     total_files = sync_result.get("data", {}).get("total_files", 0)
     lines.append(f"| Sync All | {sync_status} | {processed_files} processed, {skipped_files} skipped, {total_files} total |")
+    
+    find_similar_status = "✓ Pass" if find_similar_result.get("success") else "✗ Fail"
+    similar_count = len(find_similar_result.get("similar_images", []))
+    similar_time = find_similar_result.get("query_time_ms", 0)
+    lines.append(f"| Find Similar | {find_similar_status} | {similar_count} similar images in {similar_time}ms |")
+    
+    detect_groups_status = "✓ Pass" if detect_groups_result.get("success") else "✗ Fail"
+    total_groups = detect_groups_result.get("total_groups", 0)
+    total_pairs = detect_groups_result.get("total_similar_pairs", 0)
+    detect_time = detect_groups_result.get("query_time_ms", 0)
+    lines.append(f"| Detect Similar Groups | {detect_groups_status} | {total_groups} groups, {total_pairs} pairs in {detect_time}ms |")
     
     lines.append("")
     
@@ -389,6 +402,125 @@ def generate_markdown_report(test_results: Dict, output_path: str, test_data_dir
         lines.append("## Data Synchronization")
         lines.append("")
         lines.append(f"- **Error**: {sync_result.get('error', 'Unknown error')}")
+        lines.append("")
+    
+    if find_similar_result.get("success"):
+        lines.append("## Find Similar Images (1-to-N)")
+        lines.append("")
+        
+        reference_id = find_similar_result.get("reference_id", 0)
+        similar_images = find_similar_result.get("similar_images", [])
+        query_time = find_similar_result.get("query_time_ms", 0)
+        record_id_to_path = find_similar_result.get("record_id_to_path", {})
+        
+        lines.append(f"### Reference Image: ID {reference_id}")
+        lines.append("")
+        lines.append(f"**Query time**: {query_time}ms")
+        lines.append("")
+        lines.append(f"**Found {len(similar_images)} similar images**:")
+        lines.append("")
+        
+        if similar_images:
+            lines.append("| Rank | Image | Record ID | Similarity |")
+            lines.append("|------|-------|-----------|------------|")
+            
+            for result in similar_images:
+                rank = result.get("rank", 0)
+                record_id = result.get("record_id", 0)
+                similarity = result.get("similarity", 0)
+                image_path = record_id_to_path.get(record_id, "")
+                image_name = Path(image_path).name if image_path else f"ID_{record_id}"
+                lines.append(f"| {rank} | {image_name} | {record_id} | {similarity:.4f} |")
+            
+            lines.append("")
+        else:
+            lines.append("No similar images found.")
+            lines.append("")
+    
+    elif find_similar_result.get("error"):
+        lines.append("## Find Similar Images")
+        lines.append("")
+        lines.append(f"- **Error**: {find_similar_result.get('error', 'Unknown error')}")
+        lines.append("")
+    
+    if detect_groups_result.get("success"):
+        lines.append("## Detect Similar Groups (N-to-N)")
+        lines.append("")
+        
+        total_images = detect_groups_result.get("total_images", 0)
+        total_groups = detect_groups_result.get("total_groups", 0)
+        total_pairs = detect_groups_result.get("total_similar_pairs", 0)
+        groups = detect_groups_result.get("groups", [])
+        query_time = detect_groups_result.get("query_time_ms", 0)
+        record_id_to_path = detect_groups_result.get("record_id_to_path", {})
+        
+        lines.append("### Summary")
+        lines.append("")
+        lines.append(f"- **Total images**: {total_images}")
+        lines.append(f"- **Total groups**: {total_groups}")
+        lines.append(f"- **Total similar pairs**: {total_pairs}")
+        lines.append(f"- **Query time**: {query_time}ms")
+        lines.append("")
+        
+        lines.append("### Algorithm")
+        lines.append("")
+        lines.append("```")
+        lines.append("1. Retrieve all vectors from FAISS index")
+        lines.append("2. Batch search: each vector searches top-K neighbors")
+        lines.append("3. Filter: keep pairs with similarity >= min_similarity")
+        lines.append("4. Deduplicate: keep only pairs where id_A < id_B")
+        lines.append("5. Group: use Union-Find for transitive grouping")
+        lines.append("   - A≈B, B≈C → A,B,C same group")
+        lines.append("```")
+        lines.append("")
+        
+        if groups:
+            lines.append("### Similar Groups (Sorted by Pair Count)")
+            lines.append("")
+            
+            for group in groups[:10]:
+                group_id = group.get("group_id", 0)
+                images = group.get("images", [])
+                avg_sim = group.get("avg_similarity", 0)
+                pair_count = group.get("pair_count", 0)
+                
+                lines.append(f"#### Group {group_id}")
+                lines.append("")
+                lines.append(f"- **Images**: {len(images)}")
+                lines.append(f"- **Average similarity**: {avg_sim:.4f}")
+                lines.append(f"- **Pair count**: {pair_count}")
+                lines.append("")
+                
+                lines.append("| Role | Image | Record ID | Similarity to Rep |")
+                lines.append("|------|-------|-----------|-------------------|")
+                
+                for img in images[:10]:
+                    record_id = img.get("record_id", 0)
+                    is_rep = img.get("representative", False)
+                    sim_to_rep = img.get("similarity_to_representative", 1.0)
+                    image_path = record_id_to_path.get(record_id, "")
+                    image_name = Path(image_path).name if image_path else f"ID_{record_id}"
+                    
+                    role = "Representative" if is_rep else "Member"
+                    sim_str = "-" if is_rep else f"{sim_to_rep:.4f}"
+                    lines.append(f"| {role} | {image_name} | {record_id} | {sim_str} |")
+                
+                lines.append("")
+            
+            if len(groups) > 10:
+                lines.append(f"*... and {len(groups) - 10} more groups*")
+                lines.append("")
+        
+        else:
+            lines.append("### No Similar Groups Found")
+            lines.append("")
+            lines.append("No groups with 2+ similar images were detected.")
+            lines.append("")
+    
+    elif detect_groups_result.get("error"):
+        lines.append("## Detect Similar Groups")
+        lines.append("")
+        lines.append(f"- **Error**: {detect_groups_result.get('error', 'Unknown error')}")
         lines.append("")
     
     with open(output_path, "w", encoding="utf-8") as f:
@@ -884,6 +1016,126 @@ def main():
             "error": "Index not initialized"
         }
     
+    print("\n" + "-"*80)
+    print("Test 7: Detect Similar Groups (N-to-N Similarity Detection)")
+    print("-"*80)
+    
+    if test_results.get("index_init", {}).get("success"):
+        print("Step 1: Detect similar groups across all images...")
+        
+        detect_groups_params = {
+            "action": "detect_similar_groups",
+            "min_similarity": 0.85,
+            "scope": "all",
+            "top_k_per_image": 10
+        }
+        
+        detect_response = process.send_request("find_similar", detect_groups_params, timeout=60.0)
+        
+        if detect_response and detect_response.get("success"):
+            detect_data = detect_response.get("data", {})
+            
+            total_images = detect_data.get("total_images", 0)
+            total_groups = detect_data.get("total_groups", 0)
+            total_pairs = detect_data.get("total_similar_pairs", 0)
+            groups = detect_data.get("groups", [])
+            query_time = detect_data.get("query_time_ms", 0)
+            
+            print(f"✓ Detect similar groups successful")
+            print(f"  - Total images: {total_images}")
+            print(f"  - Total groups: {total_groups}")
+            print(f"  - Total similar pairs: {total_pairs}")
+            print(f"  - Query time: {query_time}ms")
+            
+            record_id_to_path = test_results.get("index_init", {}).get("record_id_to_path", {})
+            
+            if groups:
+                print(f"\n  Top groups (sorted by pair_count):")
+                for group in groups[:5]:
+                    group_id = group.get("group_id")
+                    images = group.get("images", [])
+                    avg_sim = group.get("avg_similarity", 0)
+                    pair_count = group.get("pair_count", 0)
+                    
+                    print(f"\n    Group {group_id} ({len(images)} images, avg_sim: {avg_sim:.4f}, pairs: {pair_count}):")
+                    for img in images[:5]:
+                        record_id = img.get("record_id")
+                        is_rep = img.get("representative", False)
+                        sim_to_rep = img.get("similarity_to_representative")
+                        image_path = record_id_to_path.get(record_id, "")
+                        image_name = Path(image_path).name if image_path else f"ID_{record_id}"
+                        
+                        if is_rep:
+                            print(f"      [REP] {image_name} (ID: {record_id})")
+                        else:
+                            print(f"            {image_name} (ID: {record_id}, sim_to_rep: {sim_to_rep:.4f})")
+            
+            test_results["detect_similar_groups"] = {
+                "success": True,
+                "total_images": total_images,
+                "total_groups": total_groups,
+                "total_similar_pairs": total_pairs,
+                "groups": groups,
+                "query_time_ms": query_time,
+                "record_id_to_path": record_id_to_path
+            }
+        else:
+            print("✗ Detect similar groups failed")
+            error = detect_response.get("error", "Unknown error") if detect_response else "No response"
+            print(f"  - Error: {error}")
+            
+            test_results["detect_similar_groups"] = {
+                "success": False,
+                "error": error
+            }
+        
+        print("\nStep 2: Detect similar groups for specific record_ids...")
+        
+        record_id_to_path = test_results.get("index_init", {}).get("record_id_to_path", {})
+        if len(record_id_to_path) >= 5:
+            sample_ids = list(record_id_to_path.keys())[:5]
+            
+            detect_partial_params = {
+                "action": "detect_similar_groups",
+                "min_similarity": 0.8,
+                "scope": "partial",
+                "record_ids": sample_ids,
+                "top_k_per_image": 5
+            }
+            
+            detect_partial_response = process.send_request("find_similar", detect_partial_params, timeout=30.0)
+            
+            if detect_partial_response and detect_partial_response.get("success"):
+                partial_data = detect_partial_response.get("data", {})
+                
+                print(f"✓ Detect similar groups (partial) successful")
+                print(f"  - Scope: partial ({len(sample_ids)} images)")
+                print(f"  - Total groups: {partial_data.get('total_groups', 0)}")
+                print(f"  - Query time: {partial_data.get('query_time_ms', 0)}ms")
+                
+                test_results["detect_similar_groups_partial"] = {
+                    "success": True,
+                    "scope": "partial",
+                    "record_ids": sample_ids,
+                    "total_groups": partial_data.get("total_groups", 0),
+                    "query_time_ms": partial_data.get("query_time_ms", 0)
+                }
+            else:
+                print("✗ Detect similar groups (partial) failed")
+                error = detect_partial_response.get("error", "Unknown error") if detect_partial_response else "No response"
+                print(f"  - Error: {error}")
+                
+                test_results["detect_similar_groups_partial"] = {
+                    "success": False,
+                    "error": error
+                }
+    else:
+        print("✗ Detect similar groups skipped (index not initialized)")
+        test_results["detect_similar_groups"] = {
+            "success": False,
+            "error": "Index not initialized"
+        }
+    
     process.stop()
     
     output_dir = project_root / "test_results"
@@ -905,6 +1157,11 @@ def main():
     print(f"✓ Sync All: {test_results.get('sync', {}).get('success', False)}")
     print(f"✓ Find Similar: {test_results.get('find_similar', {}).get('success', False)}")
     print(f"✓ Find Similar by Image: {test_results.get('find_similar_by_image', {}).get('success', False)}")
+    print(f"✓ Detect Similar Groups: {test_results.get('detect_similar_groups', {}).get('success', False)}")
+    
+    detect_result = test_results.get('detect_similar_groups', {})
+    if detect_result.get('success'):
+        print(f"  - Groups: {detect_result.get('total_groups', 0)}, Pairs: {detect_result.get('total_similar_pairs', 0)}")
     
     print(f"\nReport generated: {md_path}")
     print(f"\nOpen the Markdown report to view test results!")

@@ -94,7 +94,7 @@ SUPPORTED_MODELS = {
 def get_model_dir() -> Path:
     """Get the models directory path"""
     script_dir = Path(__file__).parent
-    models_dir = script_dir / "models"
+    models_dir = script_dir.parent / "src" / "models"
     models_dir.mkdir(exist_ok=True)
     return models_dir
 

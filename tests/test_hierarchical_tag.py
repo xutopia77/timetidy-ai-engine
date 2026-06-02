@@ -4,7 +4,6 @@ Test Hierarchical Tag Engine with real data and generate markdown report
 
 import os
 import sys
-import json
 import argparse
 from pathlib import Path
 from datetime import datetime
@@ -14,7 +13,7 @@ if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8")
     sys.stderr.reconfigure(encoding="utf-8")
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
 
 from engines.hierarchical_tag_engine import HierarchicalTagEngine
 
@@ -274,27 +273,14 @@ def main():
     
     generate_markdown_report(results, md_path, test_data_dir, project_root)
     
-    json_path = output_dir / f"hierarchical_tag_test_{timestamp}.json"
-    with open(json_path, "w", encoding="utf-8") as f:
-        json.dump({
-            "test_date": datetime.now().isoformat(),
-            "test_data_dir": test_data_dir,
-            "total_images": len(results),
-            "results": results,
-            "errors": errors,
-        }, f, indent=2, ensure_ascii=False)
-    
-    print(f"✓ JSON results saved: {json_path}")
-    
     print("\n" + "="*80)
     print("Test Summary")
     print("="*80)
     print(f"\n✓ Total images: {len(image_files)}")
     print(f"✓ Successfully processed: {len(results)}")
     print(f"✗ Failed: {len(errors)}")
-    print(f"\nReports generated:")
+    print(f"\nReport generated:")
     print(f"  - Markdown: {md_path}")
-    print(f"  - JSON: {json_path}")
     print(f"\nOpen the markdown report to view results with image previews!")
     print("="*80 + "\n")
 

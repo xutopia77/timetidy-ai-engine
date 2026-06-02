@@ -1,0 +1,33 @@
+{
+  "queries": [
+    {
+      "text": "风景",
+      "description": "搜索风景相关的图片",
+      "top_k": 5
+    },
+    {
+      "text": "人物",
+      "description": "搜索人物相关的图片",
+      "top_k": 5
+    },
+    {
+      "text": "建筑",
+      "description": "搜索建筑相关的图片",
+      "top_k": 5
+    },
+    {
+      "text": "美食",
+      "description": "搜索美食相关的图片",
+      "top_k": 5
+    },
+    {
+      "text": "动物",
+      "description": "搜索动物相关的图片",
+      "top_k": 5
+    }
+  ],
+  "settings": {
+    "max_images": 100,
+    "description": "最大搜索图像数量，用于限制搜索范围"
+  }
+}

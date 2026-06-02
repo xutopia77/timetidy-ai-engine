@@ -247,7 +247,6 @@ class IndexInitEngine(BaseEngine):
             if self.is_building:
                 summary["status"] = "processing"
             
-            print(f"summary:{summary}", file=sys.stderr)
             return {
                 "success": True,
                 "operation": "get_progress",

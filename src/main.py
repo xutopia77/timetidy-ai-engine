@@ -30,8 +30,7 @@ class AIEngine:
         self.engines["tag_detect"] = HierarchicalTagEngine()
         self.engines["ping"] = PingEngine()
         
-        print("AI Engine initialized successfully", file=sys.stderr)
-        print(f"  - Available actions: {list(self.engines.keys())}", file=sys.stderr)
+        print(f"AI Engine initialized successfully, available actions: {list(self.engines.keys())}", file=sys.stderr)
 
     def handle_request(self, request: dict) -> dict:
         action = request.get("action", "")

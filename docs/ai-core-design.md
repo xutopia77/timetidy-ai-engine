@@ -136,11 +136,9 @@
 }
 ```
 优势：
-- 无需HTTP服务器，减少资源占用
 - 进程常驻，避免每次启动Python的开销
 - 简单的请求-响应模型
 - 易于调试（stderr输出日志）
-- 性能更高（无HTTP协议开销）
 
 
 #### 1.2 技术栈选择
@@ -171,7 +169,7 @@
 
 ### 2. AI核心功能详细设计
 
-#### 2.1 文搜图功能（SearchEngine）
+#### 2.1 文搜图、图搜图（SearchEngine）
 
 **功能需求：**
 
@@ -205,45 +203,43 @@
 
 **函数接口设计：**
 
-```
-Go调用接口：
-SearchImages(query string, topK int, filters map) ([]SearchResult, error)
-
-Python处理流程：
 1. 接收JSON请求：
-   {
-     "id": "1234567890",
-     "action": "search",
-     "params": {
-       "query": "风景照片",
-       "top_k": 10,
-       "filters": {
-         "min_similarity": 0.5
-       }
-     }
-   }
+```json
+{
+  "id": "1234567890",
+  "action": "search",
+  "params": {
+    "query": "风景照片",
+    "top_k": 10,
+    "filters": {
+      "min_similarity": 0.5
+    }
+  }
+}
+```
 
 2. 处理请求并返回JSON响应：
-   {
-     "id": "1234567890",
-     "success": true,
-     "data": {
-       "results": [
-         {
-           "record_id": 1001,
-           "similarity": 0.95,
-           "rank": 1
-         },
-         {
-           "record_id": 1002,
-           "similarity": 0.89,
-           "rank": 2
-         }
-       ],
-       "query_time_ms": 3.5,
-       "total_count": 10
-     }
-   }
+```json
+{
+  "id": "1234567890",
+  "success": true,
+  "data": {
+    "results": [
+      {
+        "record_id": 1001,
+        "similarity": 0.95,
+        "rank": 1
+      },
+      {
+        "record_id": 1002,
+        "similarity": 0.89,
+        "rank": 2
+      }
+    ],
+    "query_time_ms": 3.5,
+    "total_count": 10
+  }
+}
 ```
 
 #### 2.2 分层标签生成功能（HierarchicalTagEngine）

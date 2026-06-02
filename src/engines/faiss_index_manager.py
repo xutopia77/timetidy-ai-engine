@@ -14,6 +14,7 @@ import json
 import time
 import numpy as np
 from pathlib import Path
+from typing import List, Optional
 import faiss
 
 
@@ -57,6 +58,9 @@ class FAISSIndexManager:
             
             quantizer = faiss.IndexFlatIP(self.feature_dim)
             index_ivf = faiss.IndexIVFFlat(quantizer, self.feature_dim, self.nlist, faiss.METRIC_INNER_PRODUCT)
+            
+            index_ivf.direct_map = faiss.DirectMap()
+            index_ivf.direct_map.type = faiss.DirectMap.Array
             
             dummy_features = np.random.rand(self.nlist, self.feature_dim).astype('float32')
             print(f"Training index with {self.nlist} dummy vectors...", file=sys.stderr)
@@ -127,6 +131,9 @@ class FAISSIndexManager:
             print(f"Creating IndexIVFFlat with nlist={nlist}...", file=sys.stderr)
             quantizer = faiss.IndexFlatIP(self.feature_dim)
             index_ivf = faiss.IndexIVFFlat(quantizer, self.feature_dim, nlist, faiss.METRIC_INNER_PRODUCT)
+            
+            index_ivf.direct_map = faiss.DirectMap()
+            index_ivf.direct_map.type = faiss.DirectMap.Array
             
             print(f"Training index with {len(features)} vectors...", file=sys.stderr)
             index_ivf.train(features_array)
@@ -280,6 +287,119 @@ class FAISSIndexManager:
         except Exception as e:
             print(f"Error removing vector: {e}", file=sys.stderr)
             return False
+    
+    def get_vector(self, record_id: int) -> Optional[np.ndarray]:
+        """
+        Get vector by record_id
+        
+        Args:
+            record_id: int - record ID
+        
+        Returns:
+            np.ndarray - vector features (shape: [1, feature_dim])
+            None - if vector not found
+        """
+        if not self.is_loaded():
+            raise RuntimeError("Index not loaded")
+        
+        try:
+            record_key = str(record_id)
+            
+            if record_key not in self.metadata:
+                print(f"Record {record_id} not found in metadata", file=sys.stderr)
+                return None
+            
+            meta = self.metadata[record_key]
+            if meta.get("deleted", False):
+                print(f"Record {record_id} is marked as deleted", file=sys.stderr)
+                return None
+            
+            if hasattr(self.index, 'index') and hasattr(self.index.index, 'direct_map'):
+                inner_index = self.index.index
+                
+                try:
+                    inner_id = inner_index.direct_map.get(record_id)
+                    if inner_id >= 0:
+                        vector = inner_index.reconstruct(inner_id)
+                        vector = np.array(vector, dtype=np.float32).reshape(1, -1)
+                        print(f"Retrieved vector for record {record_id} via direct_map, shape: {vector.shape}", file=sys.stderr)
+                        return vector
+                except Exception as e:
+                    print(f"direct_map.get failed: {e}", file=sys.stderr)
+            
+            try:
+                vector = self.index.reconstruct(record_id)
+                vector = np.array(vector, dtype=np.float32).reshape(1, -1)
+                print(f"Retrieved vector for record {record_id} using reconstruct, shape: {vector.shape}", file=sys.stderr)
+                return vector
+            except Exception as e:
+                print(f"reconstruct failed: {e}", file=sys.stderr)
+            
+            print(f"Failed to retrieve vector for record {record_id}", file=sys.stderr)
+            return None
+            
+        except Exception as e:
+            print(f"Error getting vector for record {record_id}: {e}", file=sys.stderr)
+            import traceback
+            traceback.print_exc(file=sys.stderr)
+            return None
+    
+    def search_by_vector(self, query_vector: np.ndarray, top_k: int = 10, exclude_ids: List[int] = None) -> list:
+        """
+        Search similar vectors by query vector
+        
+        Args:
+            query_vector: np.ndarray - query vector (shape: [1, feature_dim])
+            top_k: int - number of results to return
+            exclude_ids: List[int] - record IDs to exclude from results
+        
+        Returns:
+            list - search results with record_id, similarity, rank
+        """
+        if not self.is_loaded():
+            raise RuntimeError("Index not loaded")
+        
+        if query_vector.shape[1] != self.feature_dim:
+            raise ValueError(f"Feature dimension mismatch: {query_vector.shape[1]} vs {self.feature_dim}")
+        
+        query_array = np.array(query_vector, dtype=np.float32)
+        
+        try:
+            if hasattr(self.index, 'index') and hasattr(self.index.index, 'nprobe'):
+                self.index.index.nprobe = self.nprobe
+            elif hasattr(self.index, 'nprobe'):
+                self.index.nprobe = self.nprobe
+        except (AttributeError, TypeError) as e:
+            print(f"Warning: Failed to set nprobe: {e}", file=sys.stderr)
+        
+        search_k = top_k + (len(exclude_ids) if exclude_ids else 0)
+        
+        distances, ids = self.index.search(query_array, search_k)
+        
+        results = []
+        for i in range(len(ids[0])):
+            record_id = int(ids[0][i])
+            similarity = float(distances[0][i])
+            
+            if record_id < 0:
+                continue
+            
+            if exclude_ids and record_id in exclude_ids:
+                continue
+            
+            if str(record_id) in self.metadata:
+                meta = self.metadata[str(record_id)]
+                if not meta.get("deleted", False):
+                    results.append({
+                        "record_id": record_id,
+                        "similarity": similarity,
+                        "rank": len(results) + 1
+                    })
+            
+            if len(results) >= top_k:
+                break
+        
+        return results
     
     def delete_index(self) -> bool:
         """

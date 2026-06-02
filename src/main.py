@@ -15,6 +15,7 @@ from engines.search_engine_faiss import SearchEngine
 from engines.index_init_engine import IndexInitEngine
 from engines.sync_engine import SyncEngine
 from engines.hierarchical_tag_engine import HierarchicalTagEngine
+from engines.similarity_engine import SimilarityEngine
 
 
 class AIEngine:
@@ -28,9 +29,11 @@ class AIEngine:
         self.engines["index_init"] = IndexInitEngine()
         self.engines["sync"] = SyncEngine()
         self.engines["tag_detect"] = HierarchicalTagEngine()
+        self.engines["find_similar"] = SimilarityEngine()
         self.engines["ping"] = PingEngine()
         
-        print(f"AI Engine initialized successfully, available actions: {list(self.engines.keys())}", file=sys.stderr)
+        print("AI Engine initialized successfully", file=sys.stderr)
+        print(f"  - Available actions: {list(self.engines.keys())}", file=sys.stderr)
 
     def handle_request(self, request: dict) -> dict:
         action = request.get("action", "")

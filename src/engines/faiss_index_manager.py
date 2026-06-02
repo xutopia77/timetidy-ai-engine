@@ -45,6 +45,38 @@ class FAISSIndexManager:
     def is_loaded(self) -> bool:
         return self.index is not None
     
+    def create_empty_index(self) -> bool:
+        """
+        Create an empty index that can add vectors one by one
+        
+        Returns:
+            bool - True if successful, False otherwise
+        """
+        try:
+            print(f"Creating empty FAISS index...", file=sys.stderr)
+            
+            quantizer = faiss.IndexFlatIP(self.feature_dim)
+            index_ivf = faiss.IndexIVFFlat(quantizer, self.feature_dim, self.nlist, faiss.METRIC_INNER_PRODUCT)
+            
+            dummy_features = np.random.rand(self.nlist, self.feature_dim).astype('float32')
+            print(f"Training index with {self.nlist} dummy vectors...", file=sys.stderr)
+            index_ivf.train(dummy_features)
+            
+            print(f"Creating IndexIDMap2 wrapper...", file=sys.stderr)
+            self.index = faiss.IndexIDMap2(index_ivf)
+            
+            self.metadata = {}
+            
+            print(f"Empty index created successfully", file=sys.stderr)
+            
+            return True
+            
+        except Exception as e:
+            print(f"Error creating empty index: {e}", file=sys.stderr)
+            import traceback
+            traceback.print_exc(file=sys.stderr)
+            return False
+    
     def load_index(self) -> bool:
         if not self.index_file.exists():
             print(f"Index file not found: {self.index_file}", file=sys.stderr)
@@ -248,6 +280,48 @@ class FAISSIndexManager:
         except Exception as e:
             print(f"Error removing vector: {e}", file=sys.stderr)
             return False
+    
+    def delete_index(self) -> bool:
+        """
+        Delete index files
+        
+        Returns:
+            bool - True if successful, False otherwise
+        """
+        print(f"Deleting index files...", file=sys.stderr)
+        
+        deleted_files = []
+        
+        if self.index_file.exists():
+            try:
+                os.remove(str(self.index_file))
+                deleted_files.append(str(self.index_file))
+                print(f"  - Deleted: {self.index_file}", file=sys.stderr)
+            except Exception as e:
+                print(f"  - Failed to delete {self.index_file}: {e}", file=sys.stderr)
+        
+        if self.metadata_file.exists():
+            try:
+                os.remove(str(self.metadata_file))
+                deleted_files.append(str(self.metadata_file))
+                print(f"  - Deleted: {self.metadata_file}", file=sys.stderr)
+            except Exception as e:
+                print(f"  - Failed to delete {self.metadata_file}: {e}", file=sys.stderr)
+        
+        if self.config_file.exists():
+            try:
+                os.remove(str(self.config_file))
+                deleted_files.append(str(self.config_file))
+                print(f"  - Deleted: {self.config_file}", file=sys.stderr)
+            except Exception as e:
+                print(f"  - Failed to delete {self.config_file}: {e}", file=sys.stderr)
+        
+        self.index = None
+        self.metadata = {}
+        
+        print(f"Index deleted successfully, {len(deleted_files)} files removed", file=sys.stderr)
+        
+        return True
     
     def get_status(self) -> dict:
         return {

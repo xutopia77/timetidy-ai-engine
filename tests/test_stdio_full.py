@@ -1,19 +1,28 @@
 """
-Test AI Engine stdio communication and generate markdown report
+Test AI Engine stdio communication (File Hash Based)
 
-This script tests:
+This script simulates Go behavior and tests:
 1. Ping communication
-2. Index initialization (FAISS)
-3. Text-to-image search (FAISS)
-4. Tag detection
-5. Data synchronization events
-6. Generates markdown report with image links
+2. Index initialization (FAISS) with process_file.json
+3. Progress monitoring (start/stop/continue/get_progress)
+4. Text-to-image search (FAISS)
+5. Tag detection
+6. Data synchronization (sync_all with file_hash comparison)
+7. Generates markdown report with image links
+
+Key Design:
+- Go creates process_file.json with file_hash
+- Python reads process_file.json and compares file_hash
+- Python processes files with changed file_hash
+- Python skips files with unchanged file_hash
 """
 
 import sys
 import os
 import json
 import argparse
+import time
+import hashlib
 from pathlib import Path
 from datetime import datetime
 from typing import List, Dict
@@ -41,21 +50,79 @@ def find_image_files(root_dir: str, extensions: List[str] = None) -> List[str]:
     return sorted(image_files)
 
 
-def generate_image_records(image_files: List[str], start_id: int = 1001) -> tuple:
-    """Generate image records for index initialization and record_id mapping"""
-    records = []
+def compute_file_hash(file_path: str) -> str:
+    """Compute file hash (simulate Go behavior)"""
+    return hashlib.md5(file_path.encode()).hexdigest()
+
+
+def create_process_file(image_files: List[str], start_id: int = 1001, output_path: str = None) -> tuple:
+    """
+    Create process_file.json (simulate Go behavior)
+    
+    Args:
+        image_files: list of image file paths
+        start_id: starting record ID
+        output_path: output file path
+    
+    Returns:
+        tuple: (process_file_data, record_id_to_path)
+    """
+    files = []
     record_id_to_path = {}
     
     for i, image_path in enumerate(image_files):
         record_id = start_id + i
-        records.append({
+        file_hash = compute_file_hash(image_path)
+        
+        files.append({
             "record_id": record_id,
             "image_path": image_path,
-            "image_hash": f"hash_{record_id}"
+            "file_hash": file_hash,
+            "status": "pending"
         })
+        
         record_id_to_path[record_id] = image_path
     
-    return records, record_id_to_path
+    process_file_data = {
+        "version": "1.0.0",
+        "batch": 10,
+        "files": files,
+        "start_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "last_update_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    }
+    
+    if output_path:
+        with open(output_path, "w", encoding="utf-8") as f:
+            json.dump(process_file_data, f, indent=2, ensure_ascii=False)
+        print(f"✓ Process file created: {output_path}")
+    
+    return process_file_data, record_id_to_path
+
+
+def update_process_file_with_new_hash(process_file_path: str, record_id: int, new_hash: str):
+    """
+    Update process_file.json with new file_hash (simulate Go behavior)
+    
+    Args:
+        process_file_path: path to process_file.json
+        record_id: record ID to update
+        new_hash: new file hash
+    """
+    with open(process_file_path, "r", encoding="utf-8") as f:
+        process_data = json.load(f)
+    
+    for file_record in process_data["files"]:
+        if file_record["record_id"] == record_id:
+            file_record["file_hash"] = new_hash
+            file_record["status"] = "pending"
+            break
+    
+    process_data["last_update_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    with open(process_file_path, "w", encoding="utf-8") as f:
+        json.dump(process_data, f, indent=2, ensure_ascii=False)
+    
+    print(f"✓ Process file updated: record_id={record_id}, new_hash={new_hash}")
 
 
 def get_relative_path(image_path: Path, base_dir: Path) -> str:
@@ -73,7 +140,7 @@ def generate_markdown_report(test_results: Dict, output_path: str, test_data_dir
     """Generate markdown test report"""
     lines = []
     
-    lines.append("# AI Engine stdio Communication Test Report")
+    lines.append("# AI Engine stdio Communication Test Report (File Hash Based)")
     lines.append("")
     lines.append(f"**Generated**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     lines.append(f"**Test Data**: `{test_data_dir}`")
@@ -97,7 +164,9 @@ def generate_markdown_report(test_results: Dict, output_path: str, test_data_dir
     index_init_status = "✓ Pass" if index_init_result.get("success") else "✗ Fail"
     total_images = index_init_result.get("data", {}).get("total_images", 0)
     build_time = index_init_result.get("data", {}).get("build_time_seconds", 0)
-    lines.append(f"| Index Init | {index_init_status} | {total_images} images in {build_time}s |")
+    processed = index_init_result.get("data", {}).get("processed_files", 0)
+    skipped = index_init_result.get("data", {}).get("skipped_files", 0)
+    lines.append(f"| Index Init | {index_init_status} | {processed} processed, {skipped} skipped, {total_images} total |")
     
     search_status = "✓ Pass" if search_results.get("success") else "✗ Fail"
     search_count = len(search_results.get("results", []))
@@ -110,22 +179,46 @@ def generate_markdown_report(test_results: Dict, output_path: str, test_data_dir
     lines.append(f"| Tag Detect | {tag_status} | Generated {tag_count} tags |")
     
     sync_status = "✓ Pass" if sync_result.get("success") else "✗ Fail"
-    event_type = sync_result.get("event_type", "")
-    process_time = sync_result.get("data", {}).get("process_time_ms", 0)
-    lines.append(f"| Sync Event | {sync_status} | {event_type} in {process_time}ms |")
+    processed_files = sync_result.get("data", {}).get("processed_files", 0)
+    skipped_files = sync_result.get("data", {}).get("skipped_files", 0)
+    total_files = sync_result.get("data", {}).get("total_files", 0)
+    lines.append(f"| Sync All | {sync_status} | {processed_files} processed, {skipped_files} skipped, {total_files} total |")
     
     lines.append("")
     
     if index_init_result.get("success"):
-        lines.append("## Index Initialization")
+        lines.append("## Index Initialization (File Hash Based)")
         lines.append("")
         
         data = index_init_result.get("data", {})
-        lines.append(f"- **Total images indexed**: {data.get('total_images', 0)}")
+        lines.append(f"- **Total files**: {data.get('total_images', 0)}")
+        lines.append(f"- **Processed files**: {data.get('processed_files', 0)}")
+        lines.append(f"- **Skipped files**: {data.get('skipped_files', 0)}")
+        lines.append(f"- **Failed files**: {data.get('failed_files', 0)}")
         lines.append(f"- **Build time**: {data.get('build_time_seconds', 0)}s")
-        lines.append(f"- **Failed records**: {data.get('failed_records', 0)}")
         lines.append(f"- **Index file**: `{data.get('index_file', '')}`")
         lines.append(f"- **Metadata file**: `{data.get('metadata_file', '')}`")
+        lines.append("")
+        
+        lines.append("### Process File Format")
+        lines.append("")
+        lines.append("```json")
+        lines.append("{")
+        lines.append("  \"version\": \"1.0.0\",")
+        lines.append("  \"batch\": 10,")
+        lines.append("  \"files\": [")
+        lines.append("    {")
+        lines.append("      \"record_id\": 1001,")
+        lines.append("      \"image_path\": \"/path/to/image.jpg\",")
+        lines.append("      \"file_hash\": \"abc123\",")
+        lines.append("      \"status\": \"pending\"")
+        lines.append("    }")
+        lines.append("  ],")
+        lines.append("  \"total_files\": 10000,")
+        lines.append("  \"processed_files\": 0,")
+        lines.append("  \"skipped_files\": 0")
+        lines.append("}")
+        lines.append("```")
         lines.append("")
     elif index_init_result.get("error"):
         lines.append("## Index Initialization")
@@ -220,7 +313,7 @@ def generate_markdown_report(test_results: Dict, output_path: str, test_data_dir
             lines.append("| Category | Confidence |")
             lines.append("|----------|------------|")
             
-            for tag in level1_tags:
+            for tag in level1_tags[:3]:
                 name = tag.get("name", "")
                 confidence = tag.get("confidence", 0.0)
                 lines.append(f"| {name} | {confidence:.4f} |")
@@ -233,7 +326,7 @@ def generate_markdown_report(test_results: Dict, output_path: str, test_data_dir
             lines.append("| Sub-category | Confidence | Parent |")
             lines.append("|--------------|------------|--------|")
             
-            for tag in level2_tags:
+            for tag in level2_tags[:5]:
                 name = tag.get("name", "")
                 confidence = tag.get("confidence", 0.0)
                 parent = tag.get("parent_id", "")
@@ -247,7 +340,7 @@ def generate_markdown_report(test_results: Dict, output_path: str, test_data_dir
             lines.append("| Attribute | Confidence | Type |")
             lines.append("|-----------|------------|------|")
             
-            for tag in attribute_tags:
+            for tag in attribute_tags[:5]:
                 name = tag.get("name", "")
                 confidence = tag.get("confidence", 0.0)
                 attr_type = tag.get("type", "")
@@ -270,19 +363,50 @@ def generate_markdown_report(test_results: Dict, output_path: str, test_data_dir
             lines.append("")
     
     if sync_result.get("success"):
-        lines.append("## Sync Event Results")
+        lines.append("## Data Synchronization (File Hash Based)")
         lines.append("")
         
-        event_type = sync_result.get("event_type", "")
         data = sync_result.get("data", {})
         
-        lines.append(f"### Event: {event_type}")
+        lines.append("### Sync All Results")
         lines.append("")
+        lines.append(f"- **Total files**: {data.get('total_files', 0)}")
+        lines.append(f"- **Processed files**: {data.get('processed_files', 0)}")
+        lines.append(f"- **Skipped files**: {data.get('skipped_files', 0)}")
+        lines.append(f"- **Failed files**: {data.get('failed_files', 0)}")
         lines.append(f"- **Process time**: {data.get('process_time_ms', 0)}ms")
         lines.append(f"- **Message**: {data.get('message', '')}")
         lines.append("")
+        
+        lines.append("### File Hash Comparison Logic")
+        lines.append("")
+        lines.append("```")
+        lines.append("Python compares file_hash from process_file.json:")
+        lines.append("")
+        lines.append("1. New file: file_hash not in metadata")
+        lines.append("   -> Add new vector")
+        lines.append("")
+        lines.append("2. Updated file: file_hash changed")
+        lines.append("   -> Remove old vector, add new vector")
+        lines.append("")
+        lines.append("3. Unchanged file: file_hash same")
+        lines.append("   -> Skip (no processing)")
+        lines.append("```")
+        lines.append("")
+        
+        lines.append("### Sync Flow")
+        lines.append("")
+        lines.append("```")
+        lines.append("Go generates process_file.json")
+        lines.append("  -> Python reads process_file.json")
+        lines.append("  -> Python compares file_hash")
+        lines.append("  -> Python processes changed files")
+        lines.append("  -> Python skips unchanged files")
+        lines.append("  -> Python returns sync results")
+        lines.append("```")
+        lines.append("")
     elif sync_result.get("error"):
-        lines.append("## Sync Event Results")
+        lines.append("## Data Synchronization")
         lines.append("")
         lines.append(f"- **Error**: {sync_result.get('error', 'Unknown error')}")
         lines.append("")
@@ -295,7 +419,7 @@ def generate_markdown_report(test_results: Dict, output_path: str, test_data_dir
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Test AI Engine stdio communication"
+        description="Test AI Engine stdio communication (File Hash Based)"
     )
     parser.add_argument(
         "--test-dir",
@@ -325,7 +449,7 @@ def main():
     args = parser.parse_args()
     
     print("\n" + "="*80)
-    print("AI Engine stdio Communication Test")
+    print("AI Engine stdio Communication Test (File Hash Based)")
     print("="*80)
     
     project_root = Path(__file__).parent.parent
@@ -360,7 +484,6 @@ def main():
     print("Test 1: Ping Communication")
     print("-"*80)
     
-    # =============================================================
     ping_response = process.send_request("ping", {})
     
     if ping_response and ping_response.get("success"):
@@ -377,46 +500,97 @@ def main():
         }
     
     print("\n" + "-"*80)
-    print("Test 2: Index Initialization (FAISS)")
+    print("Test 2: Index Initialization (File Hash Based)")
     print("-"*80)
     
-    print("Deleting old index files...")
+    print("Step 1: Simulate Go creating process_file.json...")
     
-    # =============================================================
-    delete_params = {
-        "action": "delete"
-    }
-    delete_response = process.send_request("index_init", delete_params)
-    if delete_response and delete_response.get("success"):
-        deleted_files = delete_response.get("data", {}).get("deleted_files", [])
-        print(f"✓ Old index deleted: {len(deleted_files)} files removed")
-    else:
-        print("✗ Old index deletion failed (or no old index exists)")
+    config_dir = project_root / "src" / "config"
+    config_dir.mkdir(exist_ok=True)
+    process_file_path = config_dir / "process_file.json"
     
-    image_records, record_id_to_path = generate_image_records(image_files, start_id=1001)
-    print(f"Initializing index with {len(image_records)} images...")
-    index_init_params = {
-        "action": "init",
-        "rebuild": True,
-        "image_records": image_records
+    process_file_data, record_id_to_path = create_process_file(
+        image_files,
+        start_id=1001,
+        output_path=str(process_file_path)
+    )
+    
+    print(f"  - Created process_file.json with {len(image_files)} files")
+    print(f"  - All files status: pending")
+    print(f"  - Each file has unique file_hash")
+    
+    print("\nStep 2: Send start request to Python...")
+    
+    start_params = {
+        "operation": "start",
+        "rebuild": True
     }
-    index_init_response = process.send_request("index_init", index_init_params, timeout=300.0)
-    if index_init_response and index_init_response.get("success"):
-        index_init_data = index_init_response.get("data", {})
+    
+    start_response = process.send_request("index_init", start_params, timeout=300.0)
+    
+    if start_response and start_response.get("success"):
+        start_data = start_response.get("data", {})
         
-        print(f"✓ Index initialized successfully")
-        print(f"  - Total images: {index_init_data.get('total_images', 0)}")
-        print(f"  - Build time: {index_init_data.get('build_time_seconds', 0)}s")
-        print(f"  - Failed records: {index_init_data.get('failed_records', 0)}")
+        print(f"✓ Index build started")
+        print(f"  - Total files: {start_data.get('total_files', 0)}")
+        print(f"  - Status: {start_data.get('status', '')}")
         
-        test_results["index_init"] = {
-            "success": True,
-            "data": index_init_data,
-            "record_id_to_path": record_id_to_path
-        }
+        print("\nStep 3: Monitor build progress...")
+        
+        max_wait_time = 300
+        start_time = time.time()
+        
+        while time.time() - start_time < max_wait_time:
+            progress_params = {
+                "operation": "get_progress"
+            }
+            
+            progress_response = process.send_request("index_init", progress_params)
+            
+            if progress_response and progress_response.get("success"):
+                progress_data1 = progress_response.get("data", {})
+                progress_data = progress_data1.get("data", {})
+                
+                status = progress_data.get("status", "")
+                processed = progress_data.get("processed_files", 0)
+                skipped = progress_data.get("skipped_files", 0)
+                total = progress_data.get("total_files", 0)
+                percent = progress_data.get("progress_percent", 0.0)
+
+                print(f"Progress: {processed + skipped}/{total} ({percent:.1f}%), Processed: {processed}, Skipped: {skipped}")
+                
+                if status == "completed":
+                    print(f"✓ Index build completed")
+                    
+                    test_results["index_init"] = {
+                        "success": True,
+                        "data": {
+                            "total_images": total,
+                            "processed_files": processed,
+                            "skipped_files": skipped,
+                            "failed_files": progress_data.get("failed_files", 0),
+                            "build_time_seconds": round(time.time() - start_time, 2),
+                            "index_file": str(project_root / "src" / "data" / "index" / "faiss_index.bin"),
+                            "metadata_file": str(project_root / "src" / "data" / "index" / "ai_metadata.json")
+                        },
+                        "record_id_to_path": record_id_to_path
+                    }
+                    break
+                
+                time.sleep(2)
+            else:
+                print("✗ Failed to get progress")
+                break
+        
+        if time.time() - start_time >= max_wait_time:
+            print("✗ Index build timeout")
+            test_results["index_init"] = {
+                "success": False,
+                "error": "Index build timeout"
+            }
     else:
         print("✗ Index initialization failed")
-        error = index_init_response.get("error", "Unknown error") if index_init_response else "No response"
+        error = start_response.get("error", "Unknown error") if start_response else "No response"
         print(f"  - Error: {error}")
         
         test_results["index_init"] = {
@@ -425,7 +599,7 @@ def main():
         }
     
     print("\n" + "-"*80)
-    print("Test 3: Text-to-Image Search (FAISS)")
+    print("Test 3: Text-to-Image Search")
     print("-"*80)
     
     if test_results.get("index_init", {}).get("success"):
@@ -435,10 +609,12 @@ def main():
             "top_k": args.top_k,
             "filters": {}
         }
+        
         print(f"Query: \"{args.search_query}\"")
         print(f"Searching in indexed images...")
         
         search_response = process.send_request("search", search_params, timeout=30.0)
+        
         if search_response and search_response.get("success"):
             search_data = search_response.get("data", {})
             results = search_data.get("results", [])
@@ -489,13 +665,15 @@ def main():
     if image_files:
         test_image = image_files[0]
         print(f"Testing image: {Path(test_image).name}")
+        
         tag_params = {
             "action": "generate_tags",
             "image_path": test_image,
             "tag_level": "all"
         }
+        
         tag_response = process.send_request("tag_detect", tag_params)
-        print(f"tag_detect resp data {tag_response}")
+        
         if tag_response and tag_response.get("success"):
             tag_data = tag_response.get("data", {})
             
@@ -547,50 +725,67 @@ def main():
             }
     
     print("\n" + "-"*80)
-    print("Test 5: Data Synchronization Event")
+    print("Test 5: Data Synchronization (File Hash Based)")
     print("-"*80)
     
-    if test_results.get("search", {}).get("success") and test_results.get("search", {}).get("results"):
-        first_result = test_results["search"]["results"][0]
-        record_id = first_result.get("record_id")
+    if test_results.get("index_init", {}).get("success") and len(image_files) >= 2:
+        print("Step 1: Simulate Go updating process_file.json...")
         
-        print(f"Testing IMAGE_DELETED event for record_id: {record_id}")
+        first_record_id = 1001
+        new_hash = "new_hash_" + str(int(time.time()))
+        
+        update_process_file_with_new_hash(
+            str(process_file_path),
+            first_record_id,
+            new_hash
+        )
+        
+        print(f"  - Updated file_hash for record_id={first_record_id}")
+        print(f"  - Old hash: {compute_file_hash(image_files[0])}")
+        print(f"  - New hash: {new_hash}")
+        
+        print("\nStep 2: Send sync_all request...")
         
         sync_params = {
-            "event_type": "IMAGE_DELETED",
-            "record_id": record_id
+            "operation": "sync_all"
         }
         
-        sync_response = process.send_request("sync", sync_params)
+        sync_response = process.send_request("sync", sync_params, timeout=60.0)
         
         if sync_response and sync_response.get("success"):
             sync_data = sync_response.get("data", {})
             
-            print(f"✓ Sync event successful")
-            print(f"  - Event type: IMAGE_DELETED")
-            print(f"  - Process time: {sync_data.get('process_time_ms', 0)}ms")
+            total_files = sync_data.get("total_files", 0)
+            processed_files = sync_data.get("processed_files", 0)
+            skipped_files = sync_data.get("skipped_files", 0)
+            failed_files = sync_data.get("failed_files", 0)
+            process_time = sync_data.get("process_time_ms", 0)
+            
+            print(f"✓ Sync successful")
+            print(f"  - Total files: {total_files}")
+            print(f"  - Processed files: {processed_files} (file_hash changed)")
+            print(f"  - Skipped files: {skipped_files} (file_hash unchanged)")
+            print(f"  - Failed files: {failed_files}")
+            print(f"  - Process time: {process_time}ms")
             
             test_results["sync"] = {
                 "success": True,
-                "event_type": "IMAGE_DELETED",
                 "data": sync_data
             }
         else:
-            print("✗ Sync event failed")
+            print("✗ Sync failed")
             error = sync_response.get("error", "Unknown error") if sync_response else "No response"
             print(f"  - Error: {error}")
             
             test_results["sync"] = {
                 "success": False,
-                "event_type": "IMAGE_DELETED",
                 "error": error
             }
     else:
-        print("✗ Sync event skipped (no search results)")
+        print("✗ Sync skipped (index not initialized or insufficient images)")
         test_results["sync"] = {
             "success": False,
-            "event_type": "IMAGE_DELETED",
-            "error": "No search results available"
+            "error": "Index not initialized or insufficient images"
         }
     
     process.stop()
@@ -611,7 +806,7 @@ def main():
     print(f"✓ Index Init: {test_results.get('index_init', {}).get('success', False)}")
     print(f"✓ Search: {test_results.get('search', {}).get('success', False)}")
     print(f"✓ Tag Detect: {test_results.get('tag_detect', {}).get('success', False)}")
-    print(f"✓ Sync Event: {test_results.get('sync', {}).get('success', False)}")
+    print(f"✓ Sync All: {test_results.get('sync', {}).get('success', False)}")
     
     print(f"\nReport generated: {md_path}")
     print(f"\nOpen the Markdown report to view test results!")

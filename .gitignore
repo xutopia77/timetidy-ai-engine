@@ -52,3 +52,6 @@ src/data/index/ai_metadata.json
 src/data/index/faiss_index.bin
 src/data/index/index_config.json
 tmp/test.log
+src/config/process_file.json
+tests/test.log
+test.log

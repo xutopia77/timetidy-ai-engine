@@ -1,24 +1,23 @@
 """
-Data Sync Engine
+Data Sync Engine (File Hash Based)
 
 This engine provides:
-1. Event-driven data synchronization
-2. Image addition, deletion, modification handling
-3. Batch import support
+1. Batch synchronization based on file_hash comparison
+2. Add new files (file_hash not in metadata)
+3. Update modified files (file_hash changed)
+4. Skip unchanged files (file_hash same)
 
-Event types:
-- IMAGE_ADDED: Add new image to index
-- IMAGE_DELETED: Remove image from index
-- IMAGE_MOVED: Update image path (no feature change)
-- IMAGE_MODIFIED: Update image features
-- BATCH_IMPORTED: Batch add images
+Key Design:
+- Go maintains all data (SQLite, file system, file_hash)
+- Python only handles AI features (feature extraction, vector search)
+- process_file.json contains all file info with file_hash
+- Python compares file_hash to decide whether to update index
 """
 
 import os
 import sys
 import json
 import time
-import hashlib
 import numpy as np
 from pathlib import Path
 from typing import Dict, List
@@ -33,201 +32,159 @@ class SyncEngine(BaseEngine):
         self.clip_encoder = CLIPEncoder()
         self.index_manager = FAISSIndexManager()
         
-        print(f"SyncEngine initialized:", file=sys.stderr)
+        print(f"SyncEngine initialized (file_hash based)", file=sys.stderr)
     
     def process(self, params: dict) -> dict:
-        event_type = params.get("event_type", "")
+        operation = params.get("operation", "")
         
-        if event_type == "IMAGE_ADDED":
-            return self._handle_image_added(params)
+        if operation == "sync_all":
+            return self._sync_all(params)
         
-        elif event_type == "IMAGE_DELETED":
-            return self._handle_image_deleted(params)
-        
-        elif event_type == "IMAGE_MOVED":
-            return self._handle_image_moved(params)
-        
-        elif event_type == "IMAGE_MODIFIED":
-            return self._handle_image_modified(params)
-        
-        elif event_type == "BATCH_IMPORTED":
-            return self._handle_batch_imported(params)
-        
-        elif event_type == "get_status":
+        elif operation == "get_status":
             return self._get_status()
         
         else:
-            raise ValueError(f"Unknown event_type: {event_type}")
+            raise ValueError(f"Unknown operation: {operation}")
     
-    def _handle_image_added(self, params: dict) -> dict:
-        self._ensure_index_loaded()
+    def _sync_all(self, params: dict) -> dict:
+        """
+        Synchronize all files based on file_hash comparison
         
-        record_id = params.get("record_id")
-        image_path = params.get("image_path")
-        image_hash = params.get("image_hash", "")
-        
-        if record_id is None or image_path is None:
-            raise ValueError("record_id and image_path are required")
-        
-        start_time = time.time()
-        
-        features = self.clip_encoder.encode_image(image_path)
-        
-        success = self.index_manager.add_vector(features, record_id, image_hash)
-        
-        process_time_ms = (time.time() - start_time) * 1000
-        
-        if success:
-            return {
-                "success": True,
-                "event_type": "IMAGE_ADDED",
-                "record_id": record_id,
-                "vector_id": record_id,
-                "process_time_ms": round(process_time_ms, 2),
-                "message": "Image added to index successfully"
+        Args:
+            params: {
+                "progress_file": "path/to/process_file.json" (optional)
             }
-        else:
+        
+        Returns:
+            {
+                "success": true,
+                "total_files": 10000,
+                "processed_files": 50,
+                "skipped_files": 9950,
+                "failed_files": 0,
+                "process_time_ms": 1234.56
+            }
+        """
+        print(f"Starting sync_all operation...", file=sys.stderr)
+        
+        progress_file_path = params.get("progress_file", "config/process_file.json")
+        progress_file = Path(progress_file_path)
+        
+        if not progress_file.exists():
             return {
                 "success": False,
-                "event_type": "IMAGE_ADDED",
-                "record_id": record_id,
-                "error": "Failed to add image to index"
+                "error": f"Progress file not found: {progress_file}",
+                "hint": "Go should create progress file with file_hash info"
             }
-    
-    def _handle_image_deleted(self, params: dict) -> dict:
-        self._ensure_index_loaded()
         
-        record_id = params.get("record_id")
-        
-        if record_id is None:
-            raise ValueError("record_id is required")
-        
-        start_time = time.time()
-        
-        success = self.index_manager.remove_vector(record_id)
-        
-        process_time_ms = (time.time() - start_time) * 1000
-        
-        if success:
-            return {
-                "success": True,
-                "event_type": "IMAGE_DELETED",
-                "record_id": record_id,
-                "process_time_ms": round(process_time_ms, 2),
-                "message": "Image removed from index successfully"
-            }
-        else:
+        try:
+            with open(progress_file, "r", encoding="utf-8") as f:
+                progress_data = json.load(f)
+        except json.JSONDecodeError as e:
             return {
                 "success": False,
-                "event_type": "IMAGE_DELETED",
-                "record_id": record_id,
-                "error": "Failed to remove image from index"
+                "error": f"Progress file format error: {e}"
             }
-    
-    def _handle_image_moved(self, params: dict) -> dict:
-        self._ensure_index_loaded()
         
-        record_id = params.get("record_id")
-        new_path = params.get("new_path")
-        old_path = params.get("old_path")
+        files = progress_data.get("files", [])
         
-        if record_id is None:
-            raise ValueError("record_id is required")
-        
-        return {
-            "success": True,
-            "event_type": "IMAGE_MOVED",
-            "record_id": record_id,
-            "old_path": old_path,
-            "new_path": new_path,
-            "message": "Image moved, no feature change required"
-        }
-    
-    def _handle_image_modified(self, params: dict) -> dict:
-        self._ensure_index_loaded()
-        
-        record_id = params.get("record_id")
-        image_path = params.get("image_path")
-        new_image_hash = params.get("image_hash", "")
-        
-        if record_id is None or image_path is None:
-            raise ValueError("record_id and image_path are required")
-        
-        start_time = time.time()
-        
-        self.index_manager.remove_vector(record_id)
-        
-        features = self.clip_encoder.encode_image(image_path)
-        
-        success = self.index_manager.add_vector(features, record_id, new_image_hash)
-        
-        process_time_ms = (time.time() - start_time) * 1000
-        
-        if success:
+        if not files:
             return {
                 "success": True,
-                "event_type": "IMAGE_MODIFIED",
-                "record_id": record_id,
-                "vector_id": record_id,
-                "process_time_ms": round(process_time_ms, 2),
-                "message": "Image features updated successfully"
+                "total_files": 0,
+                "processed_files": 0,
+                "skipped_files": 0,
+                "failed_files": 0,
+                "message": "No files to sync"
             }
-        else:
-            return {
-                "success": False,
-                "event_type": "IMAGE_MODIFIED",
-                "record_id": record_id,
-                "error": "Failed to update image features"
-            }
-    
-    def _handle_batch_imported(self, params: dict) -> dict:
+        
         self._ensure_index_loaded()
         
-        records = params.get("records", [])
-        
-        if not records:
-            raise ValueError("records list is required")
+        metadata = self.index_manager.metadata
         
         start_time = time.time()
         
-        success_count = 0
-        fail_count = 0
+        processed_count = 0
+        skipped_count = 0
+        failed_count = 0
         
-        for record in records:
-            record_id = record.get("record_id")
-            image_path = record.get("image_path")
-            image_hash = record.get("image_hash", "")
+        for file_record in files:
+            record_id = file_record.get("record_id")
+            image_path = file_record.get("image_path")
+            file_hash = file_record.get("file_hash", "")
             
             if record_id is None or image_path is None:
-                fail_count += 1
+                failed_count += 1
+                print(f"Invalid file record: {file_record}", file=sys.stderr)
                 continue
             
-            try:
-                features = self.clip_encoder.encode_image(image_path)
-                success = self.index_manager.add_vector(features, record_id, image_hash)
+            record_key = str(record_id)
+            
+            if record_key in metadata:
+                existing_hash = metadata[record_key].get("file_hash", "")
                 
-                if success:
-                    success_count += 1
+                if existing_hash == file_hash:
+                    skipped_count += 1
+                    continue
                 else:
-                    fail_count += 1
+                    print(f"Updating file {record_id} (hash changed: {existing_hash} -> {file_hash})", file=sys.stderr)
                     
-            except Exception as e:
-                print(f"Failed to add image {image_path}: {e}", file=sys.stderr)
-                fail_count += 1
+                    try:
+                        self.index_manager.remove_vector(record_id)
+                        
+                        features = self.clip_encoder.encode_image(image_path)
+                        
+                        success = self.index_manager.add_vector(features, record_id, file_hash)
+                        
+                        if success:
+                            processed_count += 1
+                        else:
+                            failed_count += 1
+                            print(f"Failed to update file {record_id}", file=sys.stderr)
+                    
+                    except Exception as e:
+                        failed_count += 1
+                        print(f"Error updating file {record_id}: {e}", file=sys.stderr)
+            
+            else:
+                print(f"Adding new file {record_id}", file=sys.stderr)
+                
+                try:
+                    features = self.clip_encoder.encode_image(image_path)
+                    
+                    success = self.index_manager.add_vector(features, record_id, file_hash)
+                    
+                    if success:
+                        processed_count += 1
+                    else:
+                        failed_count += 1
+                        print(f"Failed to add file {record_id}", file=sys.stderr)
+                
+                except Exception as e:
+                    failed_count += 1
+                    print(f"Error adding file {record_id}: {e}", file=sys.stderr)
+        
+        self.index_manager.save_index()
         
         process_time_ms = (time.time() - start_time) * 1000
         
+        total_files = len(files)
+        
+        print(f"Sync completed: {processed_count} processed, {skipped_count} skipped, {failed_count} failed", file=sys.stderr)
+        
         return {
             "success": True,
-            "event_type": "BATCH_IMPORTED",
-            "total_count": len(records),
-            "success_count": success_count,
-            "fail_count": fail_count,
+            "operation": "sync_all",
+            "total_files": total_files,
+            "processed_files": processed_count,
+            "skipped_files": skipped_count,
+            "failed_files": failed_count,
             "process_time_ms": round(process_time_ms, 2),
-            "message": f"Batch import completed: {success_count} success, {fail_count} failed"
+            "message": f"Sync completed: {processed_count} processed, {skipped_count} skipped, {failed_count} failed"
         }
     
     def _ensure_index_loaded(self):
+        """Ensure FAISS index is loaded"""
         if not self.index_manager.is_loaded():
             if self.index_manager.index_file.exists():
                 self.index_manager.load_index()
@@ -235,10 +192,11 @@ class SyncEngine(BaseEngine):
                 raise RuntimeError(
                     "FAISS index not found. Please initialize index first:\n"
                     "  action: 'index_init'\n"
-                    "  params: {'rebuild': false}"
+                    "  params: {'operation': 'start', 'rebuild': false}"
                 )
     
     def _get_status(self) -> dict:
+        """Get sync engine status"""
         return {
             "clip_encoder": self.clip_encoder.get_status(),
             "index_manager": self.index_manager.get_status()

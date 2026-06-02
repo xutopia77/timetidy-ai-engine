@@ -63,7 +63,7 @@
 │  │  元数据管理层                                             ││
 │  │  - ai_metadata.json（最小化）                             ││
 │  │  - vector_id ↔ record_id 映射                            ││
-│  │  - image_hash（检测变化）                                 ││
+│  │  - file_hash（检测变化）                                 ││
 │  └─────────────────────────────────────────────────────────┘│
 │  ┌─────────────────────────────────────────────────────────┐│
 │  │  特征提取层（CLIP ONNX）                                   ││
@@ -75,7 +75,6 @@
 
 **关键设计原则：**
 
-```
 原则1: 语言边界清晰
 - Go负责：文件管理、数据库、用户界面、业务逻辑
 - Python负责：AI推理、特征提取、向量搜索、AI功能
@@ -106,17 +105,16 @@
 - 特征缓存复用
 - 批量编码加速
 - 无HTTP开销（stdio通信更快）
-```
 
 **stdio通信协议：**
 
-```
+
 通信方式：
 - Go启动Python子进程（python main.py）
 - Go通过stdin发送JSON请求（每行一个JSON对象）
 - Python通过stdout返回JSON响应（每行一个JSON对象）
 - Python通过stderr输出日志信息
-
+```json
 请求格式：
 {
   "id": "1234567890",        // 请求ID（时间戳）
@@ -136,20 +134,19 @@
   },
   "error": ""                // 错误信息（失败时）
 }
-
+```
 优势：
 - 无需HTTP服务器，减少资源占用
 - 进程常驻，避免每次启动Python的开销
 - 简单的请求-响应模型
 - 易于调试（stderr输出日志）
 - 性能更高（无HTTP协议开销）
-```
+
 
 #### 1.2 技术栈选择
 
 **Go相册主体技术栈：**
 
-```
 - 语言: Go 1.20+
 - 数据库: SQLite（业务数据）
 - AI通信: PythonProcess（管理Python子进程）
@@ -159,11 +156,9 @@
 - 文件监听: fsnotify（监听图片目录变化）
 - 日志: logrus/zap
 - 配置: viper
-```
 
 **Python AI模块技术栈：**
 
-```
 - 语言: Python 3.8+
 - 通信方式: stdio（标准输入输出）
   - 从stdin读取JSON请求
@@ -173,7 +168,6 @@
 - 特征提取: Chinese-CLIP ONNX
 - 日志: loguru
 - 配置: pydantic
-```
 
 ### 2. AI核心功能详细设计
 
@@ -181,7 +175,6 @@
 
 **功能需求：**
 
-```
 用户输入：
 - 搜索文本（如"风景"、"人物"、"美食"）
 - 搜索参数（top_k、过滤条件等）
@@ -189,11 +182,9 @@
 返回结果：
 - 图片列表（record_id、相似度分数）
 - Go根据record_id查询SQLite获取完整信息
-```
 
 **实现方案：**
 
-```
 核心流程：
 1. Go发送搜索请求（通过stdin）
 2. Python接收请求并提取文本特征（CLIP Text Encoder）
@@ -210,8 +201,7 @@
 性能优化：
 - 文本特征缓存（相同查询复用）
 - 批量搜索支持（多个查询一次处理）
-- 过滤条件支持（按时间、相册等过滤）
-```
+- 过滤条件支持（按时间、相册等过滤）（后续增加）
 
 **函数接口设计：**
 
@@ -256,42 +246,10 @@ Python处理流程：
    }
 ```
 
-**Go调用示例：**
-
-```go
-// Go调用Python AI搜索功能（通过stdio）
-func SearchImages(query string, topK int) ([]SearchResult, error) {
-    // 构造请求
-    params := map[string]interface{}{
-        "query": query,
-        "top_k": topK,
-    }
-    
-    // 发送请求到Python进程（通过stdin）
-    resp, err := ai.SendRequest("search", params)
-    if err != nil {
-        return nil, err
-    }
-    
-    // 解析返回结果
-    var result SearchResponse
-    json.Unmarshal(resp.Data, &result)
-    
-    // 根据record_id查询SQLite获取完整信息
-    for _, item := range result.Results {
-        imageInfo := db.QueryImageByID(item.RecordID)
-        // 展示搜索结果
-    }
-    
-    return result.Results, nil
-}
-```
-
 #### 2.2 分层标签生成功能（HierarchicalTagEngine）
 
 **功能需求：**
 
-```
 用户输入：
 - 图片image_path
 - 标签层级选择（level1, level2, attributes, all）
@@ -301,11 +259,9 @@ func SearchImages(query string, topK int) ([]SearchResult, error) {
   - 一级分类（旅游出行、日常生活、亲子育儿等）
   - 二级分类（国内游、出境游、周边游等）
   - 属性标签（白天、夜晚、晴天、春季等）
-```
 
 **设计理念：**
 
-```
 合并分类和标签生成功能，使用统一的分层标签体系：
 
 1. 技术本质相同：
@@ -324,11 +280,9 @@ func SearchImages(query string, topK int) ([]SearchResult, error) {
 4. 易于扩展：
    - 可以灵活添加新的标签层级
    - 支持用户自定义标签库（JSON配置文件）
-```
 
 **分层标签体系设计：**
 
-```
 三级标签体系：
 
 一级分类（Level 1）- 10个大类：
@@ -352,11 +306,9 @@ func SearchImages(query string, topK int) ([]SearchResult, error) {
 - 位置：src/config/hierarchical_tags.json
 - 用户可自定义修改标签体系
 - 支持多提示词（multiple prompts）提高准确度
-```
 
 **实现方案：**
 
-```
 核心流程：
 1. Go发送标签生成请求（通过stdin）
 2. Python接收请求并提取图片特征（CLIP Vision Encoder）
@@ -376,7 +328,6 @@ func SearchImages(query string, topK int) ([]SearchResult, error) {
 - 图片特征复用（从FAISS索引获取）
 - 多提示词平均embedding提高准确度
 - 批量标签生成支持
-```
 
 **函数接口设计：**
 
@@ -434,39 +385,6 @@ Python处理流程：
        "process_time_ms": 50
      }
    }
-```
-
-**Go调用示例：**
-
-```go
-// Go调用Python AI分层标签生成功能（通过stdio）
-func GenerateHierarchicalTags(recordId int, tagLevel string) (*HierarchicalTagResult, error) {
-    params := map[string]interface{}{
-        "record_id": recordId,
-        "tag_level": tagLevel,  // "level1", "level2", "attributes", "all"
-    }
-    
-    resp, err := ai.SendRequest("tag_detect", params)
-    if err != nil {
-        return nil, err
-    }
-    
-    var result HierarchicalTagResult
-    json.Unmarshal(resp.Data, &result)
-    
-    // 使用结果
-    if result.PrimaryCategory != nil {
-        fmt.Printf("Primary category: %s (confidence: %.2f)\n", 
-            result.PrimaryCategory.Name, result.PrimaryCategory.Confidence)
-    }
-    
-    for _, tag := range result.Level2Tags {
-        fmt.Printf("Level 2 tag: %s (confidence: %.2f)\n", 
-            tag.Name, tag.Confidence)
-    }
-    
-    return &result, nil
-}
 ```
 
 **配置文件说明：**
@@ -551,79 +469,15 @@ func GenerateHierarchicalTags(recordId int, tagLevel string) (*HierarchicalTagRe
 ✓ 支持多提示词提高准确度
 ```
 
-Python处理流程：
-```text
-1. 接收JSON请求：
-   {
-     "id": "1234567890",
-     "action": "classify",
-     "params": {
-       "record_ids": [1001, 1002, 1003],
-       "categories": ["风景", "人物", "美食", "动物"]
-     }
-   }
-
-2. 处理请求并返回JSON响应：
-   {
-     "id": "1234567890",
-     "success": true,
-     "data": {
-       "results": [
-         {
-           "record_id": 1001,
-           "category": "风景",
-           "confidence": 0.92,
-           "all_scores": {
-             "风景": 0.92,
-             "人物": 0.05,
-             "美食": 0.02,
-             "动物": 0.01
-           }
-         },
-         {
-           "record_id": 1002,
-           "category": "人物",
-           "confidence": 0.88
-         }
-       ],
-       "process_time_ms": 150
-     }
-   }
-```
-
-**Go调用示例：**
-
-```go
-// Go调用Python AI分类功能（通过stdio）
-func ClassifyImages(recordIds []int, categories []string) ([]ClassifyResult, error) {
-    params := map[string]interface{}{
-        "record_ids": recordIds,
-        "categories": categories,
-    }
-    
-    resp, err := ai.SendRequest("classify", params)
-    if err != nil {
-        return nil, err
-    }
-    
-    var result ClassifyResponse
-    json.Unmarshal(resp.Data, &result)
-    
-    return result.Results, nil
-}
-```
-
 #### 2.3 图片描述生成功能（DescribeEngine）
 
 **功能需求：**
 
-```
 用户输入：
 - 图片record_id
 
 返回结果：
 - 图片的自然语言描述（如："一张美丽的日落风景照片，远处是山脉，天空呈现橙红色"）
-```
 
 **实现方案：**
 
@@ -692,28 +546,6 @@ Python处理流程：
        "process_time_ms": 80
      }
    }
-```
-
-**Go调用示例：**
-
-```go
-// Go调用Python AI描述生成功能（通过stdio）
-func GenerateDescription(recordId int, language string) (string, error) {
-    params := map[string]interface{}{
-        "record_id": recordId,
-        "language": language,
-    }
-    
-    resp, err := ai.SendRequest("generate_description", params)
-    if err != nil {
-        return "", err
-    }
-    
-    var result DescriptionResponse
-    json.Unmarshal(resp.Data, &result)
-    
-    return result.Description, nil
-}
 ```
 
 #### 2.4 图片相似度计算功能（SimilarityEngine）
@@ -792,249 +624,305 @@ Python处理流程：
    }
 ```
 
-**Go调用示例：**
-
-```go
-// Go调用Python AI相似度计算功能（通过stdio）
-func FindSimilarImages(recordId int, topK int, minSimilarity float64) ([]SimilarResult, error) {
-    params := map[string]interface{}{
-        "record_id": recordId,
-        "top_k": topK,
-        "min_similarity": minSimilarity,
-    }
-    
-    resp, err := ai.SendRequest("find_similar", params)
-    if err != nil {
-        return nil, err
-    }
-    
-    var result SimilarResponse
-    json.Unmarshal(resp.Data, &result)
-    
-    return result.SimilarImages, nil
-}
-```
-
 ### 3. 数据同步机制设计
 
-#### 3.1 事件驱动同步架构
+#### 3.1 统一数据同步架构
+
+**核心设计理念：**
+
+```
+简化原则：
+1. Go负责维护所有数据（SQLite数据库、文件系统、file_hash）
+2. Python只负责AI功能（特征提取、向量搜索）
+3. 通过process_file.json统一传递文件信息（包含file_hash）
+4. Python通过file_hash对比决定是否更新索引
+5. 减少实时事件同步，改为批量同步
+
+关键设计：
+- file_hash统一由Go维护（计算文件内容hash）
+- Python只检查file_hash是否变化
+- 如果file_hash变化，Python重新处理该文件
+- 如果file_hash相同，Python跳过该文件
+
+优势：
+- 降低系统复杂度（无需复杂的元数据对比）
+- 减少通信频率（批量同步而非实时同步）
+- 提高可靠性（Go完全控制数据一致性）
+- 易于维护（单一数据源）
+- 简化Python端逻辑（只检查file_hash）
+```
 
 **同步流程：**
 
 ```
-Go相册主体 → Python AI模块（通过stdio）
+Go相册主体 → Python AI模块（通过process_file.json）
 
-事件类型：
-1. IMAGE_ADDED: 新增图片
-2. IMAGE_DELETED: 删除图片
-3. IMAGE_MOVED: 移动图片
-4. IMAGE_MODIFIED: 修改图片
-5. BATCH_IMPORTED: 批量导入
+同步触发时机：
+1. 用户首次使用AI功能（首次构建索引）
+2. 用户手动触发同步（如导入大量新图片后）
+3. 定期自动同步（如每天凌晨）
+4. 用户请求重建索引
 
 同步方式：
-- Go发送同步请求（通过stdin）
-- Python处理事件并更新FAISS索引和元数据
-- Python返回结果（通过stdout）
-- Go接收结果并处理
+- Go生成process_file.json（包含所有文件信息和file_hash）
+- Go触发FAISS索引构建（发送start请求）
+- Python读取process_file.json
+- Python检查每个文件的file_hash是否变化
+- Python处理file_hash变化的文件（新增或更新）
+- Python跳过file_hash未变化的文件
+- Python返回同步结果
 ```
 
 **同步函数接口设计：**
 
 ```
 Go调用接口：
-SyncEvent(eventType string, recordId int, imagePath string, metadata map) error
+SyncAllImages() error  // 同步所有图片
+RebuildIndex() error   // 重建索引
 
 Python处理流程：
 1. 接收JSON请求：
    {
      "id": "1234567890",
-     "action": "sync",
+     "action": "index_init",
      "params": {
-       "event_type": "IMAGE_ADDED",
-       "record_id": 1001,
-       "image_path": "/path/to/image.jpg",
-       "timestamp": "2024-01-01T10:00:00Z",
-       "metadata": {
-         "file_size": 1024000,
-         "resolution": "1920x1080",
-         "exif": {...}
-       }
+       "operation": "start",
+       "rebuild": false
      }
    }
 
-2. 处理请求并返回JSON响应：
+2. 读取process_file.json：
+   {
+     "version": "1.0.0",
+     "batch": 10,
+     "files": [
+       {
+         "record_id": 1001,
+         "image_path": "/path/to/image.jpg",
+         "file_hash": "abc123",  // Go计算的文件hash
+         "status": "pending"
+       },
+       // ... 所有文件列表
+     ]
+   }
+
+3. 检查file_hash是否变化：
+   - 加载已有元数据（ai_metadata.json）
+   - 对比每个文件的file_hash
+   - 如果file_hash变化（或不存在），重新处理
+   - 如果file_hash相同，跳过
+
+4. 处理文件并更新索引：
+   - 删除旧向量（如果存在）
+   - 提取新特征
+   - 添加新向量
+   - 更新元数据（保存file_hash）
+
+5. 返回JSON响应：
    {
      "id": "1234567890",
      "success": true,
      "data": {
-       "event_type": "IMAGE_ADDED",
-       "record_id": 1001,
-       "vector_id": 1001,
-       "process_time_ms": 50,
-       "message": "Image added to index successfully"
+       "operation": "start",
+       "total_files": 10000,
+       "processed_files": 50,  // 只处理了50个file_hash变化的文件
+       "skipped_files": 9950,  // 跳过了9950个file_hash未变化的文件
+       "status": "completed",
+       "message": "Index sync completed"
      }
    }
 ```
 
-**Go调用示例：**
+#### 3.2 file_hash对比同步逻辑
 
-```go
-// Go调用Python AI同步功能（通过stdio）
-func SyncEvent(eventType string, recordId int, imagePath string, metadata map[string]interface{}) error {
-    params := map[string]interface{}{
-        "event_type": eventType,
-        "record_id": recordId,
-        "image_path": imagePath,
-        "timestamp": time.Now().Format(time.RFC3339),
-        "metadata": metadata,
-    }
-    
-    resp, err := ai.SendRequest("sync", params)
-    if err != nil {
-        return err
-    }
-    
-    if !resp.Success {
-        return fmt.Errorf("sync failed: %s", resp.Error)
-    }
-    
-    return nil
-}
-```
-
-#### 3.2 各事件类型处理流程
-
-**新增图片（IMAGE_ADDED）：**
+**核心设计理念：**
 
 ```
-Go处理流程：
-1. 用户导入图片
-2. SQLite插入记录（分配record_id）
-3. 调用Python同步API（IMAGE_ADDED事件）
+关键问题：如何识别需要处理的文件？
 
-Python处理流程：
-1. 接收IMAGE_ADDED事件
-2. 提取图片特征（CLIP Vision Encoder）
-3. 添加向量到FAISS索引（使用record_id作为ID）
-4. 更新ai_metadata.json：
-   {
-     "vector_id": record_id,
-     "record_id": record_id,
-     "image_hash": hash,
-     "deleted": false
-   }
-5. 返回成功响应
+解决方案：通过file_hash对比
+- Go生成process_file.json时，包含每个文件的file_hash
+- Python读取process_file.json，加载已有元数据
+- Python对比每个文件的file_hash
+- 如果file_hash变化（或不存在），重新处理
+- 如果file_hash相同，跳过
+
+处理逻辑：
+1. 新增文件：file_hash在process_file.json中存在，但ai_metadata.json中不存在该record_id
+   - 处理方式：直接添加向量
+   
+2. 更新文件：file_hash发生变化（与ai_metadata.json中的file_hash不同）
+   - 处理方式：先删除旧向量，再添加新向量
+   
+3. 无变化文件：file_hash相同（与ai_metadata.json中的file_hash相同）
+   - 处理方式：跳过（不处理）
+
+优势：
+- 简单直观（只检查file_hash）
+- 降低Python端复杂度
+- 提高可靠性（Go完全控制file_hash）
+- 高效（只处理需要同步的文件）
 ```
 
-**删除图片（IMAGE_DELETED）：**
+
+**file_hash对比流程图：**
 
 ```
-Go处理流程：
-1. 用户删除图片
-2. SQLite删除记录
-3. 删除文件
-4. 调用Python同步API（IMAGE_DELETED事件）
-
-Python处理流程：
-1. 接收IMAGE_DELETED事件
-2. 从FAISS索引删除向量（index.remove_ids([record_id]))
-3. 更新ai_metadata.json：deleted = true
-4. 返回成功响应
+┌─────────────────────────────────────────────────────────────┐
+│  Go生成process_file.json                                     │
+│  - 从SQLite获取所有图片record_id、image_path                   │
+│  - Go计算每个文件的file_hash（文件内容hash）                    │
+│  - 所有文件status设为pending                                  │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│  Python读取process_file.json                                  │
+│  - 获取所有文件列表（包含file_hash）                           │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│  Python加载已有元数据（ai_metadata.json）                      │
+│  - 获取已有record_id和file_hash                               │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│  file_hash对比                                                │
+│  - 对比每个文件的file_hash                                     │
+│  - file_hash变化：需要处理                                     │
+│  - file_hash相同：跳过                                         │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│  处理文件                                                      │
+│  1. 如果record_id已存在，删除旧向量                            │
+│  2. 提取新特征                                                 │
+│  3. 添加新向量                                                 │
+│  4. 更新元数据（保存file_hash）                                │
+│  5. 更新进度文件                                               │
+│  6. 保存索引                                                   │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│  返回同步结果                                                  │
+│  - total_files: 10000                                         │
+│  - processed_files: 50                                        │
+│  - skipped_files: 9950                                        │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-**移动图片（IMAGE_MOVED）：**
+#### 3.3 同步触发时机
+
+**同步触发场景：**
 
 ```
-Go处理流程：
-1. 用户移动图片
-2. SQLite更新路径
-3. 调用Python同步API（IMAGE_MOVED事件）
+场景1：首次使用AI功能
+- Go检测到FAISS索引不存在
+- Go从SQLite获取所有图片信息
+- Go计算每个文件的file_hash
+- Go生成process_file.json
+- Go发送start请求（rebuild=false）
+- Python构建索引（所有文件file_hash都不存在，全部处理）
 
-Python处理流程：
-1. 接收IMAGE_MOVED事件
-2. 无需更新FAISS索引（内容未变）
-3. 无需更新ai_metadata.json（路径在SQLite中）
-4. 仅验证image_hash未变
-5. 返回成功响应
+场景2：用户手动触发同步
+- 用户导入大量新图片（如100张）
+- 用户点击"同步AI索引"按钮
+- Go从SQLite获取所有图片信息
+- Go计算每个文件的file_hash
+- Go生成process_file.json
+- Go发送start请求（rebuild=false）
+- Python通过file_hash对比识别新增文件
+- Python只处理新增文件（高效）
+
+场景3：定期自动同步
+- Go每天凌晨自动触发同步
+- Go从SQLite获取所有图片信息
+- Go计算每个文件的file_hash
+- Go生成process_file.json
+- Go发送start请求（rebuild=false）
+- Python通过file_hash对比识别变化
+- Python只处理变化的文件
+
+场景4：用户请求重建索引
+- 用户点击"重建AI索引"按钮
+- Go从SQLite获取所有图片信息
+- Go计算每个文件的file_hash
+- Go生成process_file.json
+- Go发送start请求（rebuild=true）
+- Python删除现有索引
+- Python重新处理所有文件
 ```
 
-**修改图片（IMAGE_MODIFIED）：**
+**同步频率建议：**
 
 ```
-Go处理流程：
-1. 用户编辑图片
-2. SQLite更新信息
-3. 调用Python同步API（IMAGE_MODIFIED事件）
+实时同步：不推荐（复杂度高）
+- 每次文件变化都触发同步
+- 通信频率高，性能开销大
 
-Python处理流程：
-1. 接收IMAGE_MODIFIED事件
-2. 检测image_hash变化
-3. 删除旧向量（index.remove_ids([record_id]))
-4. 提取新特征
-5. 添加新向量（index.add_with_ids(features, [record_id]))
-6. 更新ai_metadata.json：image_hash = new_hash
-7. 返回成功响应
+批量同步：推荐（复杂度低）
+- 用户手动触发（导入大量图片后）
+- 定期自动同步（每天凌晨）
+- 按需同步（用户请求）
+
+优势：
+- 减少通信频率
+- 提高系统稳定性
+- 降低维护成本
+- 用户体验更好（批量处理更快）
 ```
 
-**批量导入（BATCH_IMPORTED）：**
+#### 3.4 异常处理和恢复
+
+**异常场景处理：**
 
 ```
-Go处理流程：
-1. 用户批量导入图片（如100张）
-2. SQLite批量插入记录
-3. 调用Python同步API（BATCH_IMPORTED事件）
+场景1：Python进程崩溃
+- Go检测到进程退出
+- Go重新启动Python进程
+- Go发送continue请求
+- Python从进度文件恢复
+- Python继续处理未完成的文件
 
-Python处理流程：
-1. 接收BATCH_IMPORTED事件
-2. 批量提取特征（batch_size=32）
-3. 批量添加向量到FAISS索引
-4. 批量更新ai_metadata.json
-5. 返回成功响应（包含处理进度）
+场景2：索引文件损坏
+- Python检测到索引加载失败
+- Python返回错误信息
+- Go发送rebuild请求
+- Python重建索引
+
+场景3：进度文件损坏
+- Python检测到进度文件格式错误
+- Python返回错误信息
+- Go重新生成进度文件
+- Go发送start请求
+
+场景4：处理失败过多
+- Python检测到failed_files超过阈值（如10%）
+- Python返回警告信息
+- Go决定是否继续或停止
+- Go记录失败文件，供用户查看
 ```
 
-#### 3.3 异步处理和进度通知
-
-**批量操作异步处理：**
+**数据一致性保证：**
 
 ```
-设计方案：
-- 批量操作（如导入100张图片）使用异步处理
-- Python返回任务ID
-- Go定期查询任务进度
-- 任务完成后通知Go
+Go端保证：
+- SQLite数据库是唯一数据源
+- 所有文件操作都先更新SQLite
+- Go计算并维护file_hash
+- process_file.json从SQLite生成
+- 确保数据一致性
 
-API设计：
-POST /api/v1/sync/batch
-Request:
-{
-  "event_type": "BATCH_IMPORTED",
-  "records": [
-    {"record_id": 1001, "image_path": "/path/1.jpg"},
-    {"record_id": 1002, "image_path": "/path/2.jpg"},
-    // ... 100张图片
-  ]
-}
+Python端保证：
+- 通过file_hash对比识别变化
+- 只处理file_hash变化的文件
+- 每处理batch个文件保存进度
+- 确保索引与元数据一致
 
-Response:
-{
-  "success": true,
-  "task_id": "task_12345",
-  "total_count": 100,
-  "estimated_time_seconds": 120,
-  "message": "Batch import task started"
-}
-
-GET /api/v1/tasks/{task_id}
-Response:
-{
-  "task_id": "task_12345",
-  "status": "processing",  // pending, processing, completed, failed
-  "progress": 45,  // 45%
-  "processed_count": 45,
-  "total_count": 100,
-  "elapsed_time_seconds": 60,
-  "estimated_remaining_seconds": 60
-}
+恢复机制：
+- Python进程崩溃：从进度文件恢复
+- 索引损坏：重建索引
+- 元数据损坏：重建索引
+- 进度文件损坏：重新生成
 ```
 
 ### 4. FAISS索引管理设计
@@ -1066,27 +954,31 @@ Response:
     {
       "record_id": 5001,
       "image_path": "/path/to/image.jpg",
-      "status": "idle"  // "idle", "processing", "completed", "failed"
+      "file_hash": "abc123",
+      "status": "pending"  // "pending", "processing", "completed", "failed"
     },
     {
       "record_id": 5002,
       "image_path": "/path/to/image2.jpg",
+      "file_hash": "def456",
       "status": "processing"
     },
     // ... 所有图片列表
   ],
-  "total_files": 10000,
-  "processed_files": 5000,
-  "failed_files": 10,
   "start_time": "2024-01-01 10:00:00",
   "last_update_time": "2024-01-01 12:00:00"
 }
 
 状态说明：
-- idle: 待处理（未开始）
+- pending: 待处理（未构建索引）
 - processing: 正在处理
-- completed: 已完成
+- completed: 已完成（已构建索引）
 - failed: 处理失败
+
+重要说明：
+- Go生成process_file.json时，所有文件status统一设为"pending"
+- Python通过元数据对比自动识别文件类型（新增、删除、更新）
+- 统计信息（total_files, processed_files等）实时计算，避免数据不一致
 ```
 
 **Go触发请求接口：**
@@ -1123,260 +1015,6 @@ Python处理流程：
    }
 ```
 
-**Go调用示例：**
-
-```go
-// Go触发FAISS索引构建（首次启动）
-func StartIndexBuild(rebuild bool) error {
-    // 1. 扫描图片目录，整理待处理文件列表
-    imageFiles := scanImageDirectory()
-    
-    // 2. 生成进度文件
-    progressFile := generateProgressFile(imageFiles)
-    saveProgressFile("ai-engine/src/config/process_file.json", progressFile)
-    
-    // 3. 发送start请求到Python
-    params := map[string]interface{}{
-        "operation": "start",
-        "rebuild": rebuild,
-    }
-    
-    resp, err := ai.SendRequest("index_init", params)
-    if err != nil {
-        return err
-    }
-    
-    // 4. 监控进度
-    monitorBuildProgress()
-    
-    return nil
-}
-
-// Go停止索引构建
-func StopIndexBuild() error {
-    params := map[string]interface{}{
-        "operation": "stop",
-    }
-    
-    resp, err := ai.SendRequest("index_init", params)
-    if err != nil {
-        return err
-    }
-    
-    return nil
-}
-
-// Go继续索引构建
-func ContinueIndexBuild() error {
-    params := map[string]interface{}{
-        "operation": "continue",
-    }
-    
-    resp, err := ai.SendRequest("index_init", params)
-    if err != nil {
-        return err
-    }
-    
-    return nil
-}
-
-// Go获取构建进度
-func GetIndexBuildProgress() (ProgressInfo, error) {
-    params := map[string]interface{}{
-        "operation": "get_progress",
-    }
-    
-    resp, err := ai.SendRequest("index_init", params)
-    if err != nil {
-        return ProgressInfo{}, err
-    }
-    
-    var progress ProgressInfo
-    json.Unmarshal(resp.Data, &progress)
-    
-    return progress, nil
-}
-
-// 生成进度文件
-func generateProgressFile(imageFiles []string) ProgressFile {
-    files := []FileRecord{}
-    for i, imagePath := range imageFiles {
-        files.append(FileRecord{
-            RecordID: 1000 + i,
-            ImagePath: imagePath,
-            Status: "idle",
-        })
-    }
-    
-    return ProgressFile{
-        Version: "1.0.0",
-        Batch: 10,
-        Files: files,
-        TotalFiles: len(files),
-        ProcessedFiles: 0,
-        FailedFiles: 0,
-        StartTime: time.Now().Format("2006-01-02 15:04:05"),
-    }
-}
-```
-
-**Python处理逻辑：**
-
-```python
-class IndexInitEngine(BaseEngine):
-    def __init__(self):
-        self.clip_encoder = CLIPEncoder()
-        self.index_manager = FAISSIndexManager()
-        self.progress_file = Path("config/process_file.json")
-        self.is_building = False
-        self.stop_flag = False
-        
-    def process(self, params: dict) -> dict:
-        operation = params.get("operation", "")
-        rebuild = params.get("rebuild", False)
-        
-        if operation == "start":
-            return self._start_build(rebuild)
-        
-        elif operation == "stop":
-            return self._stop_build()
-        
-        elif operation == "continue":
-            return self._continue_build()
-        
-        elif operation == "get_progress":
-            return self._get_progress()
-        
-        else:
-            raise ValueError(f"Unknown operation: {operation}")
-    
-    def _start_build(self, rebuild: bool) -> dict:
-        # 1. 检查是否需要重建
-        if rebuild:
-            self.index_manager.delete_index()
-        
-        # 2. 读取进度文件
-        progress_data = self._load_progress_file()
-        
-        # 3. 开始构建
-        self.is_building = True
-        self.stop_flag = False
-        
-        # 4. 异步处理文件
-        self._process_files_async(progress_data)
-        
-        return {
-            "success": True,
-            "operation": "start",
-            "total_files": progress_data["total_files"],
-            "status": "processing",
-            "message": "Index build started"
-        }
-    
-    def _process_files_async(self, progress_data: dict):
-        batch_size = progress_data.get("batch", 10)
-        files = progress_data.get("files", [])
-        
-        processed_count = 0
-        
-        for file_record in files:
-            # 检查停止标志
-            if self.stop_flag:
-                self._save_progress_file(progress_data)
-                break
-            
-            # 只处理idle状态的文件
-            if file_record["status"] != "idle":
-                continue
-            
-            # 标记为processing
-            file_record["status"] = "processing"
-            
-            try:
-                # 提取特征
-                features = self.clip_encoder.encode_image(file_record["image_path"])
-                
-                # 添加到索引
-                self.index_manager.add_vector(
-                    features, 
-                    file_record["record_id"],
-                    file_record.get("image_hash", "")
-                )
-                
-                # 标记为completed
-                file_record["status"] = "completed"
-                processed_count += 1
-                
-            except Exception as e:
-                # 标记为failed
-                file_record["status"] = "failed"
-                print(f"Failed to process {file_record['image_path']}: {e}", file=sys.stderr)
-            
-            # 每处理batch_size个文件，更新进度文件
-            if processed_count % batch_size == 0:
-                self._update_progress_stats(progress_data)
-                self._save_progress_file(progress_data)
-                self.index_manager.save_index()
-        
-        # 处理完成，保存最终进度
-        if not self.stop_flag:
-            self._update_progress_stats(progress_data)
-            self._save_progress_file(progress_data)
-            self.index_manager.save_index()
-            self.is_building = False
-    
-    def _stop_build(self) -> dict:
-        self.stop_flag = True
-        self.is_building = False
-        
-        # 保存当前进度
-        progress_data = self._load_progress_file()
-        self._save_progress_file(progress_data)
-        self.index_manager.save_index()
-        
-        return {
-            "success": True,
-            "operation": "stop",
-            "message": "Index build stopped, progress saved"
-        }
-    
-    def _continue_build(self) -> dict:
-        # 读取进度文件
-        progress_data = self._load_progress_file()
-        
-        # 继续处理
-        self.is_building = True
-        self.stop_flag = False
-        self._process_files_async(progress_data)
-        
-        return {
-            "success": True,
-            "operation": "continue",
-            "message": "Index build continued"
-        }
-    
-    def _load_progress_file(self) -> dict:
-        if self.progress_file.exists():
-            with open(self.progress_file, "r", encoding="utf-8") as f:
-                return json.load(f)
-        else:
-            raise FileNotFoundError(f"Progress file not found: {self.progress_file}")
-    
-    def _save_progress_file(self, progress_data: dict):
-        with open(self.progress_file, "w", encoding="utf-8") as f:
-            json.dump(progress_data, f, indent=2, ensure_ascii=False)
-    
-    def _update_progress_stats(self, progress_data: dict):
-        files = progress_data.get("files", [])
-        
-        processed = sum(1 for f in files if f["status"] == "completed")
-        failed = sum(1 for f in files if f["status"] == "failed")
-        
-        progress_data["processed_files"] = processed
-        progress_data["failed_files"] = failed
-        progress_data["last_update_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-```
-
 **索引配置：**
 
 ```
@@ -1389,9 +1027,10 @@ FAISS索引配置（中规模1万-10万张）：
 
 进度文件配置：
 - 文件格式: JSON
-- 存储内容: version, batch, files列表, 统计信息
+- 存储内容: version, batch, files列表, 时间信息
 - 文件大小: ~1-2MB（10万张图片）
 - 更新频率: 每处理batch个文件更新一次
+- 统计信息: 实时计算（total_files, processed_files等），避免数据不一致
 
 元数据文件配置：
 - 文件格式: JSON
@@ -1479,7 +1118,7 @@ Go监控进度：
     "total_files": 10000,
     "processed_files": 5000,
     "failed_files": 10,
-    "status": "processing",  // "idle", "processing", "completed", "stopped"
+    "status": "processing",  // "pending", "processing", "completed", "stopped"
     "progress_percent": 50.0,
     "estimated_time_remaining": "2 hours",
     "last_update_time": "2024-01-01 12:00:00"
@@ -2028,7 +1667,7 @@ AI核心功能推荐方案（中规模1万-10万张）：
 
 元数据方案：
 ✅ 最小化元数据文件（ai_metadata.json）
-- 仅存储：vector_id, record_id, image_hash
+- 仅存储：vector_id, record_id, file_hash
 - 与SQLite解耦（维护简单）
 - 数据冗余最小化
 

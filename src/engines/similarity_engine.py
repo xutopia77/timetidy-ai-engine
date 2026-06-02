@@ -3,29 +3,66 @@ Similarity Engine for Image Similarity Search
 
 This engine provides:
 1. Find similar images by reference image record_id
-2. Uses FAISS index for fast vector similarity search
-3. Supports similarity threshold filtering
-4. Excludes reference image from results
+2. Detect similar image groups across entire album
+3. Uses FAISS index for fast vector similarity search
+4. Supports similarity threshold filtering
+5. Excludes reference image from results
 
 Key Design:
 - Image features are already in FAISS index (no re-extraction needed)
 - Uses vector similarity search (inner product / cosine similarity)
 - Supports min_similarity threshold filtering
 - Excludes reference image itself from results
+- detect_similar_groups uses Union-Find for transitive grouping
 
 Performance:
 - Direct FAISS index search (no re-encoding)
-- Search time: ~2-5ms
-- Supports batch similarity calculation
+- Search time: ~2-5ms for single query
+- detect_similar_groups: ~2-3s for 10,000 images
 """
 
 import sys
 import time
 import numpy as np
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple, Set
+from collections import defaultdict
 
 from engines.base import BaseEngine
 from engines.faiss_index_manager import FAISSIndexManager
+
+
+class UnionFind:
+    """
+    Union-Find (Disjoint Set Union) data structure
+    Used for grouping similar images with transitive relations
+    """
+    
+    def __init__(self, n: int):
+        self.parent = list(range(n))
+        self.rank = [0] * n
+    
+    def find(self, x: int) -> int:
+        if self.parent[x] != x:
+            self.parent[x] = self.find(self.parent[x])
+        return self.parent[x]
+    
+    def union(self, x: int, y: int) -> bool:
+        px, py = self.find(x), self.find(y)
+        if px == py:
+            return False
+        if self.rank[px] < self.rank[py]:
+            px, py = py, px
+        self.parent[py] = px
+        if self.rank[px] == self.rank[py]:
+            self.rank[px] += 1
+        return True
+    
+    def get_groups(self) -> Dict[int, List[int]]:
+        groups = defaultdict(list)
+        for i in range(len(self.parent)):
+            root = self.find(i)
+            groups[root].append(i)
+        return dict(groups)
 
 
 class SimilarityEngine(BaseEngine):
@@ -57,6 +94,9 @@ class SimilarityEngine(BaseEngine):
         
         elif action == "batch_find_similar":
             return self._batch_find_similar(params)
+        
+        elif action == "detect_similar_groups":
+            return self._detect_similar_groups(params)
         
         elif action == "get_status":
             return self._get_status()
@@ -257,6 +297,215 @@ class SimilarityEngine(BaseEngine):
             "total_time_ms": round(total_time_ms, 2),
             "batch_size": len(record_ids)
         }
+    
+    def _detect_similar_groups(self, params: dict) -> dict:
+        """
+        Detect similar image groups across entire album
+        
+        This is an N-to-N similarity detection that finds all groups of similar images.
+        Uses Union-Find algorithm for transitive grouping (A≈B, B≈C → A,B,C same group).
+        
+        Args:
+            params: {
+                "min_similarity": 0.9,
+                "scope": "all",
+                "record_ids": [],
+                "top_k_per_image": 20
+            }
+        
+        Returns:
+            {
+                "total_images": 10000,
+                "total_groups": 15,
+                "total_similar_pairs": 42,
+                "groups": [
+                    {
+                        "group_id": 1,
+                        "images": [
+                            {"record_id": 1001, "representative": true},
+                            {"record_id": 1005, "similarity_to_representative": 0.95}
+                        ],
+                        "avg_similarity": 0.93,
+                        "pair_count": 3
+                    }
+                ],
+                "query_time_ms": 2100
+            }
+        """
+        self._ensure_index_loaded()
+        
+        min_similarity = params.get("min_similarity", 0.9)
+        scope = params.get("scope", "all")
+        record_ids = params.get("record_ids", [])
+        top_k_per_image = params.get("top_k_per_image", 20)
+        
+        start_time = time.time()
+        
+        if scope == "partial" and record_ids:
+            target_ids = [int(rid) for rid in record_ids]
+        else:
+            target_ids = self._get_all_record_ids()
+        
+        if not target_ids:
+            return {
+                "total_images": 0,
+                "total_groups": 0,
+                "total_similar_pairs": 0,
+                "groups": [],
+                "query_time_ms": 0.0
+            }
+        
+        print(f"Detecting similar groups for {len(target_ids)} images (min_similarity={min_similarity})...", file=sys.stderr)
+        
+        id_to_index = {rid: i for i, rid in enumerate(target_ids)}
+        index_to_id = {i: rid for i, rid in enumerate(target_ids)}
+        
+        vectors = []
+        valid_ids = []
+        for rid in target_ids:
+            vec = self.index_manager.get_vector(rid)
+            if vec is not None:
+                vectors.append(vec.flatten())
+                valid_ids.append(rid)
+        
+        if not vectors:
+            return {
+                "total_images": len(target_ids),
+                "total_groups": 0,
+                "total_similar_pairs": 0,
+                "groups": [],
+                "query_time_ms": round((time.time() - start_time) * 1000, 2),
+                "error": "No vectors found for given record IDs"
+            }
+        
+        vectors_array = np.array(vectors, dtype=np.float32)
+        
+        print(f"  - Retrieved {len(vectors)} vectors from index", file=sys.stderr)
+        
+        search_start = time.time()
+        all_pairs = []
+        
+        batch_size = 1000
+        for batch_start in range(0, len(vectors_array), batch_size):
+            batch_end = min(batch_start + batch_size, len(vectors_array))
+            batch_vectors = vectors_array[batch_start:batch_end]
+            
+            try:
+                if hasattr(self.index_manager.index, 'index') and hasattr(self.index_manager.index.index, 'nprobe'):
+                    self.index_manager.index.index.nprobe = self.index_manager.nprobe
+                elif hasattr(self.index_manager.index, 'nprobe'):
+                    self.index_manager.index.nprobe = self.index_manager.nprobe
+            except (AttributeError, TypeError):
+                pass
+            
+            distances, ids = self.index_manager.index.search(batch_vectors, top_k_per_image + 1)
+            
+            for i in range(len(batch_vectors)):
+                query_idx = batch_start + i
+                query_id = valid_ids[query_idx]
+                
+                for j in range(len(ids[i])):
+                    neighbor_id = int(ids[i][j])
+                    similarity = float(distances[i][j])
+                    
+                    if neighbor_id < 0:
+                        continue
+                    
+                    if neighbor_id == query_id:
+                        continue
+                    
+                    if similarity < min_similarity:
+                        continue
+                    
+                    if neighbor_id not in id_to_index:
+                        continue
+                    
+                    neighbor_idx = id_to_index[neighbor_id]
+                    
+                    if query_idx < neighbor_idx:
+                        all_pairs.append((query_idx, neighbor_idx, similarity))
+        
+        search_time_ms = (time.time() - search_start) * 1000
+        print(f"  - Found {len(all_pairs)} similar pairs in {search_time_ms:.2f}ms", file=sys.stderr)
+        
+        uf = UnionFind(len(valid_ids))
+        for idx1, idx2, _ in all_pairs:
+            uf.union(idx1, idx2)
+        
+        raw_groups = uf.get_groups()
+        
+        groups = []
+        group_id = 1
+        for root, indices in raw_groups.items():
+            if len(indices) < 2:
+                continue
+            
+            group_images = []
+            similarities_to_rep = []
+            
+            representative_idx = indices[0]
+            representative_id = valid_ids[representative_idx]
+            group_images.append({
+                "record_id": representative_id,
+                "representative": True
+            })
+            
+            for idx in indices[1:]:
+                img_id = valid_ids[idx]
+                
+                rep_vec = vectors_array[representative_idx]
+                img_vec = vectors_array[idx]
+                sim_to_rep = float(np.dot(rep_vec, img_vec))
+                
+                group_images.append({
+                    "record_id": img_id,
+                    "similarity_to_representative": round(sim_to_rep, 4)
+                })
+                similarities_to_rep.append(sim_to_rep)
+            
+            pair_count = sum(1 for idx1, idx2, _ in all_pairs 
+                           if idx1 in indices or idx2 in indices)
+            
+            avg_sim = sum(similarities_to_rep) / len(similarities_to_rep) if similarities_to_rep else 0.0
+            
+            groups.append({
+                "group_id": group_id,
+                "images": group_images,
+                "avg_similarity": round(avg_sim, 4),
+                "pair_count": pair_count
+            })
+            group_id += 1
+        
+        groups.sort(key=lambda g: -g["pair_count"])
+        for i, g in enumerate(groups):
+            g["group_id"] = i + 1
+        
+        query_time_ms = (time.time() - start_time) * 1000
+        
+        print(f"  - Detected {len(groups)} similar groups in {query_time_ms:.2f}ms total", file=sys.stderr)
+        
+        return {
+            "total_images": len(target_ids),
+            "total_groups": len(groups),
+            "total_similar_pairs": len(all_pairs),
+            "groups": groups,
+            "query_time_ms": round(query_time_ms, 2),
+            "min_similarity": min_similarity,
+            "scope": scope,
+            "top_k_per_image": top_k_per_image
+        }
+    
+    def _get_all_record_ids(self) -> List[int]:
+        """Get all record IDs from the index metadata"""
+        if not self.index_manager.is_loaded():
+            return []
+        
+        record_ids = []
+        for key, meta in self.index_manager.metadata.items():
+            if not meta.get("deleted", False):
+                record_ids.append(meta.get("record_id", int(key)))
+        
+        return sorted(record_ids)
     
     def _get_status(self) -> dict:
         return {

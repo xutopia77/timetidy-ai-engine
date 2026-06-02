@@ -171,17 +171,34 @@
 
 #### 2.1 文搜图、图搜图（SearchEngine）
 
-**功能需求：**
+**功能概述：**
 
-用户输入：
-- 搜索文本（如"风景"、"人物"、"美食"）
-- 搜索参数（top_k、过滤条件等）
+```
+SearchEngine 提供两种搜索模式：
 
-返回结果：
-- 图片列表（record_id、相似度分数）
-- Go根据record_id查询SQLite获取完整信息
+┌─────────────────────────────────────────────────────────────────┐
+│  文搜图（search）                                                │
+│  - 输入：文本查询（如"风景"、"人物"、"美食"）                       │
+│  - 流程：文本编码 → FAISS搜索 → 返回结果                          │
+│  - 性能：~2-5ms                                                  │
+├─────────────────────────────────────────────────────────────────┤
+│  图搜图（search_by_image）                                       │
+│  - 输入：参考图片 record_id（图片已在索引中）                      │
+│  - 流程：从索引获取向量 → FAISS搜索 → 返回结果                     │
+│  - 性能：~2-5ms                                                  │
+│  - 实现：复用 SimilarityEngine.find_similar                      │
+└─────────────────────────────────────────────────────────────────┘
 
-**实现方案：**
+注意：图搜图默认场景是图片已在索引中。
+     若图片不在索引中（外部图片），使用 SimilarityEngine.find_similar_by_image。
+```
+
+**文搜图（search）：**
+
+```
+功能需求：
+- 输入：搜索文本（如"风景"、"人物"、"美食"）
+- 输出：图片列表（record_id、相似度分数）
 
 核心流程：
 1. Go发送搜索请求（通过stdin）
@@ -190,56 +207,122 @@
 4. Python返回结果（通过stdout）
 5. Go接收结果并处理
 
-关键设计：
-- 使用IndexIDMap2(IndexIVFFlat)
-- record_id作为向量ID（与SQLite一致）
-- 搜索参数：nprobe=10，top_k=5-20
-- 搜索时间：~2-5ms（1万-10万张图片）
-
 性能优化：
 - 文本特征缓存（相同查询复用）
-- 批量搜索支持（多个查询一次处理）
-- 过滤条件支持（按时间、相册等过滤）（后续增加）
+- 搜索时间：~2-5ms
+```
+
+**图搜图（search_by_image）：**
+
+```
+功能需求：
+- 输入：参考图片 record_id（图片已在索引中）
+- 输出：相似图片列表（record_id、相似度分数）
+
+核心流程：
+1. Go发送图搜图请求（通过stdin）
+2. Python从FAISS索引获取参考图片向量（无需编码）
+3. FAISS向量搜索
+4. Python返回结果（通过stdout）
+5. Go接收结果并处理
+
+关键设计：
+- 复用 SimilarityEngine.find_similar 实现
+- 图片向量已在索引中，无需重新编码
+- 搜索时间：~2-5ms
+
+场景区分：
+┌─────────────────────────────────────────────────────────────────┐
+│  场景1：图片在索引中（默认）                                      │
+│  → SearchEngine.search_by_image(record_id)                      │
+│  → 或 SimilarityEngine.find_similar(record_id)                  │
+│  → 直接从索引获取向量，无需编码                                   │
+│  → 性能：~2-5ms                                                 │
+├─────────────────────────────────────────────────────────────────┤
+│  场景2：图片不在索引中（外部图片）                                 │
+│  → SimilarityEngine.find_similar_by_image(image_path)           │
+│  → 需要先编码图片，然后搜索                                       │
+│  → 性能：~50-100ms（编码时间占主要）                              │
+└─────────────────────────────────────────────────────────────────┘
+```
 
 **函数接口设计：**
 
+```
+文搜图接口：
 1. 接收JSON请求：
-```json
-{
-  "id": "1234567890",
-  "action": "search",
-  "params": {
-    "query": "风景照片",
-    "top_k": 10,
-    "filters": {
-      "min_similarity": 0.5
-    }
-  }
-}
+   {
+     "id": "1234567890",
+     "action": "search",
+     "params": {
+       "query": "风景照片",
+       "top_k": 10,
+       "filters": {
+         "min_similarity": 0.5
+       }
+     }
+   }
+
+2. 返回JSON响应：
+   {
+     "id": "1234567890",
+     "success": true,
+     "data": {
+       "query": "风景照片",
+       "results": [
+         {"record_id": 1001, "similarity": 0.95, "rank": 1},
+         {"record_id": 1002, "similarity": 0.89, "rank": 2}
+       ],
+       "query_time_ms": 3.5,
+       "total_count": 2
+     }
+   }
+
+图搜图接口（复用 find_similar）：
+1. 接收JSON请求：
+   {
+     "id": "1234567890",
+     "action": "find_similar",
+     "params": {
+       "action": "find_similar",
+       "record_id": 1001,
+       "top_k": 10,
+       "min_similarity": 0.5
+     }
+   }
+
+2. 返回JSON响应：
+   {
+     "id": "1234567890",
+     "success": true,
+     "data": {
+       "reference_id": 1001,
+       "similar_images": [
+         {"record_id": 1005, "similarity": 0.95, "rank": 1},
+         {"record_id": 1020, "similarity": 0.89, "rank": 2}
+       ],
+       "query_time_ms": 3.2,
+       "total_count": 2
+     }
+   }
 ```
 
-2. 处理请求并返回JSON响应：
-```json
-{
-  "id": "1234567890",
-  "success": true,
-  "data": {
-    "results": [
-      {
-        "record_id": 1001,
-        "similarity": 0.95,
-        "rank": 1
-      },
-      {
-        "record_id": 1002,
-        "similarity": 0.89,
-        "rank": 2
-      }
-    ],
-    "query_time_ms": 3.5,
-    "total_count": 10
-  }
-}
+**引擎复用关系：**
+
+```
+SearchEngine（搜索引擎）
+├── search               → 文搜图（文本编码 + FAISS搜索）
+└── search_by_image      → 图搜图（复用 SimilarityEngine.find_similar）
+
+SimilarityEngine（相似度引擎）
+├── find_similar           → 图搜图（图片在索引中，默认场景）
+├── find_similar_by_image  → 图搜图（图片不在索引中，外部图片）
+├── batch_find_similar     → 批量图搜图
+└── detect_similar_groups  → 全相册相似检测（N-to-N）
+
+结论：
+- 图搜图 = SimilarityEngine.find_similar（默认场景）
+- SearchEngine 可新增 search_by_image action，内部调用 find_similar
 ```
 
 #### 2.2 分层标签生成功能（HierarchicalTagEngine）
@@ -546,20 +629,49 @@ Python处理流程：
 
 #### 2.4 图片相似度计算功能（SimilarityEngine）
 
-**功能需求：**
+**功能概述：**
 
 ```
-用户输入：
-- 参考图片record_id
-- 搜索参数（top_k、相似度阈值等）
+SimilarityEngine 提供多种相似度计算功能：
 
-返回结果：
-- 相似图片列表（record_id、相似度分数）
+┌─────────────────────────────────────────────────────────────────┐
+│  find_similar（图搜图，默认场景）                                 │
+│  - 输入：参考图片 record_id（图片已在索引中）                      │
+│  - 流程：从索引获取向量 → FAISS搜索 → 返回结果                     │
+│  - 性能：~2-5ms                                                  │
+│  - 说明：等同于 SearchEngine.search_by_image                      │
+├─────────────────────────────────────────────────────────────────┤
+│  find_similar_by_image（图搜图，外部图片）                        │
+│  - 输入：图片路径 image_path（图片不在索引中）                     │
+│  - 流程：编码图片 → FAISS搜索 → 返回结果                          │
+│  - 性能：~50-100ms（编码时间占主要）                              │
+├─────────────────────────────────────────────────────────────────┤
+│  batch_find_similar（批量图搜图）                                 │
+│  - 输入：多个 record_id                                          │
+│  - 流程：批量获取向量 → 批量搜索 → 返回结果                        │
+│  - 性能：~10-20ms（批量优化）                                     │
+├─────────────────────────────────────────────────────────────────┤
+│  detect_similar_groups（全相册相似检测）                          │
+│  - 输入：相册范围（全部或部分图片）                                │
+│  - 流程：批量搜索 → 并查集分组 → 返回分组结果                      │
+│  - 性能：~2-3s（10,000张图片）                                    │
+│  - 说明：N-to-N 相似检测，用于清理重复图片                         │
+└─────────────────────────────────────────────────────────────────┘
+
+核心设计：
+- 图片特征已在FAISS索引中（无需重新提取）
+- 使用向量相似度搜索（余弦相似度/内积）
+- 支持相似度阈值过滤
+- 排除参考图片本身
 ```
 
-**实现方案：**
+**find_similar（图搜图，默认场景）：**
 
 ```
+功能需求：
+- 输入：参考图片 record_id（图片已在索引中）
+- 输出：相似图片列表（record_id、相似度分数）
+
 核心流程：
 1. Go发送相似度计算请求（通过stdin）
 2. Python接收请求并从FAISS索引获取参考图片特征
@@ -573,10 +685,9 @@ Python处理流程：
 - 支持相似度阈值过滤
 - 排除参考图片本身
 
-性能优化：
+性能：
 - 直接使用FAISS索引（无需重新编码）
 - 搜索时间：~2-5ms
-- 支持批量相似度计算
 ```
 
 **函数接口设计：**
@@ -618,6 +729,150 @@ Python处理流程：
        "query_time_ms": 3.2
      }
    }
+```
+
+**全相册相似图片检测（detect_similar_groups）：**
+
+```
+功能需求：
+- 检测整个相册中哪些图片是相似的
+- 返回相似图片分组（而非扁平列表）
+- 支持指定范围（全部或部分图片）
+
+与 find_similar 的区别：
+┌─────────────────────────────────────────────────────────────────┐
+│  find_similar（单图查相似）                                      │
+│  - 查询模式：1-to-N                                              │
+│  - 输入：1张参考图片                                              │
+│  - 输出：与该图片相似的top-K张图片                                 │
+│  - 适用场景：用户查看某张图片的相似图片                             │
+├─────────────────────────────────────────────────────────────────┤
+│  detect_similar_groups（全相册相似检测）                          │
+│  - 查询模式：N-to-N                                              │
+│  - 输入：相册范围（全部或部分图片）                                 │
+│  - 输出：相似图片分组列表                                          │
+│  - 适用场景：用户清理重复/相似图片                                  │
+└─────────────────────────────────────────────────────────────────┘
+
+核心算法：
+1. 从FAISS索引提取所有向量（或指定范围的向量）
+2. 使用FAISS批量搜索：每个向量搜top-K近邻
+   - 一次batch_search完成所有查询（FAISS内部优化）
+3. 过滤：只保留相似度 ≥ min_similarity 的结果对
+4. 去重：只保留 record_id_A < record_id_B 的对
+5. 分组：用并查集（Union-Find）合并传递性相似关系
+   - A≈B, B≈C → A,B,C归为同一组
+
+性能估算：
+- 10,000张图片，512维向量
+- FAISS batch search：~1-2秒
+- 并查集合并：~100ms
+- 总计：~2-3秒（vs 逐个查询20-50秒+通信开销）
+```
+
+**函数接口设计：**
+
+```
+Go调用接口：
+DetectSimilarGroups(minSimilarity float, scope string, recordIds []int) ([]SimilarGroup, error)
+
+Python处理流程：
+1. 接收JSON请求：
+   {
+     "id": "1234567890",
+     "action": "find_similar",
+     "params": {
+       "action": "detect_similar_groups",
+       "min_similarity": 0.9,
+       "scope": "all",
+       "record_ids": [],
+       "top_k_per_image": 20
+     }
+   }
+
+参数说明：
+- min_similarity: 相似度阈值（越高越严格）
+  - 0.95+：几乎完全相同的图片（连拍、备份副本）
+  - 0.90-0.95：非常相似的图片（轻微裁剪、滤镜差异）
+  - 0.85-0.90：相似图片（同一场景不同角度）
+- scope: 范围 "all" 全部 / "partial" 指定record_ids
+- record_ids: scope=partial时指定的图片ID列表
+- top_k_per_image: 每张图片搜索的近邻数（默认20）
+
+2. 处理请求并返回JSON响应：
+   {
+     "id": "1234567890",
+     "success": true,
+     "data": {
+       "total_images": 10000,
+       "total_groups": 15,
+       "total_similar_pairs": 42,
+       "groups": [
+         {
+           "group_id": 1,
+           "images": [
+             {"record_id": 1001, "representative": true},
+             {"record_id": 1005, "similarity_to_representative": 0.95},
+             {"record_id": 1020, "similarity_to_representative": 0.91}
+           ],
+           "avg_similarity": 0.93,
+           "pair_count": 3
+         },
+         {
+           "group_id": 2,
+           "images": [
+             {"record_id": 2001, "representative": true},
+             {"record_id": 2003, "similarity_to_representative": 0.92}
+           ],
+           "avg_similarity": 0.92,
+           "pair_count": 1
+         }
+       ],
+       "query_time_ms": 2100
+     }
+   }
+
+结果说明：
+- total_images: 参与检测的图片总数
+- total_groups: 相似图片组数量
+- total_similar_pairs: 相似图片对数量
+- groups: 相似图片组列表
+  - group_id: 组ID
+  - images: 组内图片列表（第一张为代表性图片）
+  - avg_similarity: 组内平均相似度
+  - pair_count: 组内相似图片对数量
+```
+
+**并查集（Union-Find）算法：**
+
+```
+用于合并传递性相似关系：
+
+class UnionFind:
+    def __init__(self, n):
+        self.parent = list(range(n))
+        self.rank = [0] * n
+    
+    def find(self, x):
+        if self.parent[x] != x:
+            self.parent[x] = self.find(self.parent[x])
+        return self.parent[x]
+    
+    def union(self, x, y):
+        px, py = self.find(x), self.find(y)
+        if px == py:
+            return False
+        if self.rank[px] < self.rank[py]:
+            px, py = py, px
+        self.parent[py] = px
+        if self.rank[px] == self.rank[py]:
+            self.rank[px] += 1
+        return True
+
+使用示例：
+- A≈B → union(A, B)
+- B≈C → union(B, C)
+- 结果：A, B, C 在同一组（find(A) == find(B) == find(C)）
 ```
 
 ### 3. 数据同步机制设计

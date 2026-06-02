@@ -39,3 +39,12 @@ htmlcov/
 
 # Type checking
 .mypy_cache/
+src/models/*.pt
+src/models/*.onnx
+src/models/*.data
+src/models/tokenizer_RN50.json
+src/models/tokenizer_ViT_B_16.json
+src/models/tokenizer_ViT_H_14.json
+src/models/tokenizer_ViT_L_14.json
+test_results/*.json
+test_results/*.md

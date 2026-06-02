@@ -11,7 +11,8 @@ if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8")
     sys.stderr.reconfigure(encoding="utf-8")
 
-from engines.tag_engine import TagEngine
+from engines.search_engine import SearchEngine
+from engines.tag_engine_dynamic import TagEngine
 
 
 class AIEngine:
@@ -19,6 +20,7 @@ class AIEngine:
         self.engines = {}
 
     def init(self):
+        self.engines["search"] = SearchEngine()
         self.engines["tag_detect"] = TagEngine()
         self.engines["ping"] = PingEngine()
 

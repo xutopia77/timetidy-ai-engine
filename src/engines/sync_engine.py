@@ -71,26 +71,18 @@ class SyncEngine(BaseEngine):
         progress_file = Path(progress_file_path)
         
         if not progress_file.exists():
-            return {
-                "success": False,
-                "error": f"Progress file not found: {progress_file}",
-                "hint": "Go should create progress file with file_hash info"
-            }
+            raise FileNotFoundError(f"Progress file not found: {progress_file}. Go should create progress file with file_hash info")
         
         try:
             with open(progress_file, "r", encoding="utf-8") as f:
                 progress_data = json.load(f)
         except json.JSONDecodeError as e:
-            return {
-                "success": False,
-                "error": f"Progress file format error: {e}"
-            }
+            raise ValueError(f"Progress file format error: {e}")
         
         files = progress_data.get("files", [])
         
         if not files:
             return {
-                "success": True,
                 "total_files": 0,
                 "processed_files": 0,
                 "skipped_files": 0,
@@ -110,10 +102,10 @@ class SyncEngine(BaseEngine):
         
         for file_record in files:
             record_id = file_record.get("record_id")
-            image_path = file_record.get("image_path")
+            file_path = file_record.get("file_path")
             file_hash = file_record.get("file_hash", "")
             
-            if record_id is None or image_path is None:
+            if record_id is None or file_path is None:
                 failed_count += 1
                 print(f"Invalid file record: {file_record}", file=sys.stderr)
                 continue
@@ -132,7 +124,7 @@ class SyncEngine(BaseEngine):
                     try:
                         self.index_manager.remove_vector(record_id)
                         
-                        features = self.clip_encoder.encode_image(image_path)
+                        features = self.clip_encoder.encode_image(file_path)
                         
                         success = self.index_manager.add_vector(features, record_id, file_hash)
                         
@@ -150,7 +142,7 @@ class SyncEngine(BaseEngine):
                 print(f"Adding new file {record_id}", file=sys.stderr)
                 
                 try:
-                    features = self.clip_encoder.encode_image(image_path)
+                    features = self.clip_encoder.encode_image(file_path)
                     
                     success = self.index_manager.add_vector(features, record_id, file_hash)
                     
@@ -173,7 +165,6 @@ class SyncEngine(BaseEngine):
         print(f"Sync completed: {processed_count} processed, {skipped_count} skipped, {failed_count} failed", file=sys.stderr)
         
         return {
-            "success": True,
             "operation": "sync_all",
             "total_files": total_files,
             "processed_files": processed_count,

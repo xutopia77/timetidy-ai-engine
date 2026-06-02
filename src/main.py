@@ -32,8 +32,7 @@ class AIEngine:
         self.engines["find_similar"] = SimilarityEngine()
         self.engines["ping"] = PingEngine()
         
-        print("AI Engine initialized successfully", file=sys.stderr)
-        print(f"  - Available actions: {list(self.engines.keys())}", file=sys.stderr)
+        print(f"AI Engine initialized successfully Available actions: {list(self.engines.keys())}", file=sys.stderr)
 
     def handle_request(self, request: dict) -> dict:
         action = request.get("action", "")
@@ -48,11 +47,13 @@ class AIEngine:
 
         try:
             result = engine.process(request.get("params", {}))
-            return {
+            respDat = {
                 "id": request.get("id", ""),
                 "success": True,
                 "data": result,
             }
+            print(f"response-data: {respDat}", file=sys.stderr)
+            return respDat
         except Exception as e:
             traceback.print_exc()
             return {

@@ -10,14 +10,14 @@ Usage:
     # Use predefined tags
     result = engine.process({
         "action": "tag_image",
-        "image_path": "photo.jpg",
+        "file_path": "photo.jpg",
         "top_k": 5
     })
     
     # Use custom tags
     result = engine.process({
         "action": "tag_image",
-        "image_path": "photo.jpg",
+        "file_path": "photo.jpg",
         "tags": ["猫", "狗", "风景", "人物", "美食"],
         "top_k": 3
     })
@@ -85,17 +85,17 @@ class TagEngine(BaseEngine):
         action = params.get("action", "tag_image")
         
         if action == "tag_image":
-            image_path = params.get("image_path", "")
+            file_path = params.get("file_path", "")
             custom_tags = params.get("tags", None)
             top_k = params.get("top_k", 5)
             threshold = params.get("threshold", 0.2)
             
-            if not image_path:
-                raise ValueError("image_path is required")
+            if not file_path:
+                raise ValueError("file_path is required")
             
             tags = custom_tags if custom_tags else self.DEFAULT_TAGS
             
-            image_features = self._search_engine.encode_image(image_path)
+            image_features = self._search_engine.encode_image(file_path)
             
             tag_embeddings = self._get_tag_embeddings(tags)
             
@@ -111,7 +111,7 @@ class TagEngine(BaseEngine):
             results.sort(key=lambda x: x["confidence"], reverse=True)
             
             return {
-                "image_path": image_path,
+                "file_path": file_path,
                 "tags": results[:top_k],
                 "total_tags": len(tags),
             }

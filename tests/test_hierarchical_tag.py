@@ -138,7 +138,7 @@ def generate_markdown_report(results, output_path, test_data_dir, project_root):
     lines.append("")
     
     for i, result in enumerate(results, 1):
-        image_path = Path(result["image_path"])
+        image_path = Path(result["file_path"])
         
         md_file_dir = Path(output_path).parent
         rel_path_from_md = get_relative_path(image_path, md_file_dir)
@@ -249,7 +249,7 @@ def main():
             
             result = engine.process({
                 "action": "classify_hierarchical",
-                "image_path": image_path,
+                "file_path": image_path,
             })
             
             results.append(result)
@@ -257,7 +257,7 @@ def main():
         except Exception as e:
             print(f"  ✗ Error processing {image_path}: {e}")
             errors.append({
-                "image_path": image_path,
+                "file_path": image_path,
                 "error": str(e),
             })
     

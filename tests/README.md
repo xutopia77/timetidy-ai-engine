@@ -310,7 +310,7 @@ def search_with_cache(text, image_paths, cached_features, top_k):
     results = []
     for img_path, img_features in cached_features.items():
         similarity = compute_similarity(text_features, img_features)
-        results.append({"image_path": img_path, "similarity": similarity})
+        results.append({"file_path": img_path, "similarity": similarity})
     
     # 3. 排序返回
     results.sort(key=lambda x: x["similarity"], reverse=True)
@@ -489,7 +489,7 @@ def main():
         results = []
         for img_path, img_features in cached_features.items():
             similarity = engine.compute_similarity(text_features, img_features)
-            results.append({"image_path": img_path, "similarity": round(similarity, 4)})
+            results.append({"file_path": img_path, "similarity": round(similarity, 4)})
         
         # 排序返回 top_k
         results.sort(key=lambda x: x["similarity"], reverse=True)

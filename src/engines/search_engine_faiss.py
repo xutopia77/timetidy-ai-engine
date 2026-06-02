@@ -9,7 +9,7 @@ This engine provides:
 
 Design based on plan-discuss.md:
 - Uses FAISS IndexIDMap2(IndexIVFFlat)
-- Returns record_id instead of image_path
+- Returns record_id instead of file_path
 - Supports filters (min_similarity)
 - Text feature caching for performance optimization
 """
@@ -115,14 +115,14 @@ class SearchEngine(BaseEngine):
         return filtered_results
     
     def _encode_image(self, params: dict) -> dict:
-        image_path = params.get("image_path", "")
-        if not image_path:
-            raise ValueError("image_path is required")
+        file_path = params.get("file_path", "")
+        if not file_path:
+            raise ValueError("file_path is required")
         
-        features = self.clip_encoder.encode_image(image_path)
+        features = self.clip_encoder.encode_image(file_path)
         
         return {
-            "image_path": image_path,
+            "file_path": file_path,
             "features": features.tolist(),
             "shape": features.shape,
             "feature_dim": features.shape[1]

@@ -158,11 +158,11 @@ class SearchEngine(BaseEngine):
         action = params.get("action", "encode_image")
         
         if action == "encode_image":
-            image_path = params.get("image_path", "")
-            if not image_path:
-                raise ValueError("image_path is required")
+            file_path = params.get("file_path", "")
+            if not file_path:
+                raise ValueError("file_path is required")
             
-            features = self.encode_image(image_path)
+            features = self.encode_image(file_path)
             return {
                 "features": features.tolist(),
                 "shape": features.shape,
@@ -181,27 +181,27 @@ class SearchEngine(BaseEngine):
         
         elif action == "search_by_text":
             text = params.get("text", "")
-            image_paths = params.get("image_paths", [])
+            file_paths = params.get("file_paths", [])
             top_k = params.get("top_k", 5)
             
             if not text:
                 raise ValueError("text is required")
-            if not image_paths:
-                raise ValueError("image_paths is required")
+            if not file_paths:
+                raise ValueError("file_paths is required")
             
             text_features = self.encode_text(text)
             
             results = []
-            for img_path in image_paths:
+            for fp in file_paths:
                 try:
-                    img_features = self.encode_image(img_path)
+                    img_features = self.encode_image(fp)
                     similarity = self.compute_similarity(text_features, img_features)
                     results.append({
-                        "image_path": img_path,
+                        "file_path": fp,
                         "similarity": round(similarity, 4),
                     })
                 except Exception as e:
-                    print(f"Warning: Failed to process {img_path}: {e}", file=sys.stderr)
+                    print(f"Warning: Failed to process {fp}: {e}", file=sys.stderr)
             
             results.sort(key=lambda x: x["similarity"], reverse=True)
             return {
@@ -210,19 +210,19 @@ class SearchEngine(BaseEngine):
             }
         
         elif action == "compare_images":
-            image_path1 = params.get("image_path1", "")
-            image_path2 = params.get("image_path2", "")
+            file_path1 = params.get("file_path1", "")
+            file_path2 = params.get("file_path2", "")
             
-            if not image_path1 or not image_path2:
-                raise ValueError("image_path1 and image_path2 are required")
+            if not file_path1 or not file_path2:
+                raise ValueError("file_path1 and file_path2 are required")
             
-            features1 = self.encode_image(image_path1)
-            features2 = self.encode_image(image_path2)
+            features1 = self.encode_image(file_path1)
+            features2 = self.encode_image(file_path2)
             similarity = self.compute_similarity(features1, features2)
             
             return {
-                "image_path1": image_path1,
-                "image_path2": image_path2,
+                "file_path1": file_path1,
+                "file_path2": file_path2,
                 "similarity": round(similarity, 4),
             }
         

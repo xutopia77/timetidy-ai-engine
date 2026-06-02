@@ -122,9 +122,9 @@ def generate_markdown_report(all_results, output_path, test_data_dir, queries):
         lines.append("|------|------|--------|------|")
         
         for i, result in enumerate(results, 1):
-            image_name = Path(result["image_path"]).name
+            image_name = Path(result["file_path"]).name
             md_file_dir = Path(output_path).parent
-            rel_path = get_relative_path(Path(result["image_path"]), md_file_dir)
+            rel_path = get_relative_path(Path(result["file_path"]), md_file_dir)
             similarity = result["similarity"]
             
             lines.append(f"| {i} | [{image_name}]({rel_path}) | {similarity:.4f} | ![]({rel_path}) |")
@@ -144,7 +144,7 @@ def generate_markdown_report(all_results, output_path, test_data_dir, queries):
         lines.append("")
         
         for i, result in enumerate(results, 1):
-            image_path = Path(result["image_path"])
+            image_path = Path(result["file_path"])
             md_file_dir = Path(output_path).parent
             rel_path = get_relative_path(image_path, md_file_dir)
             
@@ -260,7 +260,7 @@ def main():
             result = engine.process({
                 "action": "search_by_text",
                 "text": query_text,
-                "image_paths": image_files,
+                "file_paths": image_files,
                 "top_k": top_k,
             })
             
@@ -269,7 +269,7 @@ def main():
             
             print(f"  找到 {len(search_results)} 个结果")
             for i, res in enumerate(search_results, 1):
-                image_name = Path(res["image_path"]).name
+                image_name = Path(res["file_path"]).name
                 similarity = res["similarity"]
                 print(f"    {i}. {image_name} (相似度: {similarity:.4f})")
             

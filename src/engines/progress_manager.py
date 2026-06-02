@@ -16,7 +16,7 @@ Progress File Format:
   "files": [
     {
       "record_id": 1001,
-      "image_path": "/path/to/image.jpg",
+      "file_path": "/path/to/image.jpg",
       "file_hash": "abc123",  // Go计算的文件hash
       "status": "pending"     // "pending", "processing", "completed", "failed"
     }
@@ -240,7 +240,7 @@ class ProgressManager:
         Create a new progress file
         
         Args:
-            image_records: list - image records with record_id, image_path, file_hash
+            image_records: list - image records with record_id, file_path, file_hash
             batch: int - batch size
         
         Returns:
@@ -251,7 +251,7 @@ class ProgressManager:
         for record in image_records:
             files.append({
                 "record_id": record.get("record_id"),
-                "image_path": record.get("image_path"),
+                "file_path": record.get("file_path"),
                 "file_hash": record.get("file_hash", ""),
                 "status": "pending"
             })

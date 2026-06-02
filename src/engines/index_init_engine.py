@@ -87,11 +87,10 @@ class IndexInitEngine(BaseEngine):
             progress_data = self.progress_manager.load_progress()
             print(f"Loaded progress file: {len(progress_data.get('files', []))} files", file=sys.stderr)
         except FileNotFoundError:
-            return {
-                "success": False,
-                "error": "Progress file not found. Please create progress file first.",
-                "hint": "Go should create progress file: ai-engine/src/config/process_file.json"
-            }
+            raise FileNotFoundError(
+                "Progress file not found. Please create progress file first.\n"
+                "Go should create progress file: ai-engine/src/config/process_file.json"
+            )
         
         if rebuild:
             print(f"Deleting existing index...", file=sys.stderr)
@@ -104,7 +103,6 @@ class IndexInitEngine(BaseEngine):
         
         if summary["status"] == "completed":
             return {
-                "success": True,
                 "operation": "start",
                 "status": "completed",
                 "message": "Index already completed, no need to start"
@@ -120,7 +118,6 @@ class IndexInitEngine(BaseEngine):
         self.build_thread.start()
         
         return {
-            "success": True,
             "operation": "start",
             "total_files": summary["total_files"],
             "processed_files": summary["processed_files"],
@@ -158,7 +155,6 @@ class IndexInitEngine(BaseEngine):
         summary = self.progress_manager.get_progress_summary(progress_data)
         
         return {
-            "success": True,
             "operation": "stop",
             "total_files": summary["total_files"],
             "processed_files": summary["processed_files"],
@@ -187,17 +183,12 @@ class IndexInitEngine(BaseEngine):
         try:
             progress_data = self.progress_manager.load_progress()
         except FileNotFoundError:
-            return {
-                "success": False,
-                "error": "Progress file not found. Cannot continue build.",
-                "hint": "Go should create progress file first"
-            }
+            raise FileNotFoundError("Progress file not found. Cannot continue build.")
         
         summary = self.progress_manager.get_progress_summary(progress_data)
         
         if summary["status"] == "completed":
             return {
-                "success": True,
                 "operation": "continue",
                 "status": "completed",
                 "message": "Index already completed"
@@ -213,7 +204,6 @@ class IndexInitEngine(BaseEngine):
         self.build_thread.start()
         
         return {
-            "success": True,
             "operation": "continue",
             "total_files": summary["total_files"],
             "processed_files": summary["processed_files"],
@@ -248,16 +238,12 @@ class IndexInitEngine(BaseEngine):
                 summary["status"] = "processing"
             
             return {
-                "success": True,
                 "operation": "get_progress",
                 "data": summary
             }
         
         except FileNotFoundError:
-            return {
-                "success": False,
-                "error": "Progress file not found"
-            }
+            raise FileNotFoundError("Progress file not found")
     
     def _process_files_async(self, progress_data: dict):
         """
@@ -299,10 +285,10 @@ class IndexInitEngine(BaseEngine):
                 continue
             
             record_id = file_record.get("record_id")
-            image_path = file_record.get("image_path")
+            file_path = file_record.get("file_path")
             file_hash = file_record.get("file_hash", "")
             
-            print(f"Processing file {record_id}: {image_path}", file=sys.stderr)
+            print(f"Processing file {record_id}: {file_path}", file=sys.stderr)
             
             file_record["status"] = "processing"
             
@@ -323,7 +309,7 @@ class IndexInitEngine(BaseEngine):
                 if record_key in metadata:
                     self.index_manager.remove_vector(record_id)
                 
-                features = self.clip_encoder.encode_image(image_path)
+                features = self.clip_encoder.encode_image(file_path)
                 features = features.flatten()
                 
                 self.index_manager.add_vector(features, record_id, file_hash)
@@ -336,7 +322,7 @@ class IndexInitEngine(BaseEngine):
             except Exception as e:
                 file_record["status"] = "failed"
                 failed_count += 1
-                print(f"Failed to process {image_path}: {e}", file=sys.stderr)
+                print(f"Failed to process {file_path}: {e}", file=sys.stderr)
             
             if (processed_count + skipped_count) % batch_size == 0:
                 progress_data["processed_files"] = processed_count

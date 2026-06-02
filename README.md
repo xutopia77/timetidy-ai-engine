@@ -113,7 +113,7 @@ from engines.hierarchical_tag_engine import HierarchicalTagEngine
 engine = HierarchicalTagEngine(top_k=3)
 result = engine.process({
     "action": "classify_hierarchical",
-    "image_path": "photo.jpg"
+    "file_path": "photo.jpg"
 })
 
 # Result structure:
@@ -138,7 +138,7 @@ engine = SearchEngine()
 result = engine.process({
     "action": "search_by_text",
     "text": "可爱的小猫",
-    "image_paths": ["cat1.jpg", "cat2.jpg", "dog.jpg"],
+    "file_paths": ["cat1.jpg", "cat2.jpg", "dog.jpg"],
     "top_k": 2
 })
 ```

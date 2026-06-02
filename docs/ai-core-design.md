@@ -240,7 +240,7 @@ SearchEngine 提供两种搜索模式：
 │  → 性能：~2-5ms                                                 │
 ├─────────────────────────────────────────────────────────────────┤
 │  场景2：图片不在索引中（外部图片）                                 │
-│  → SimilarityEngine.find_similar_by_image(image_path)           │
+│  → SimilarityEngine.find_similar_by_image(file_path)           │
 │  → 需要先编码图片，然后搜索                                       │
 │  → 性能：~50-100ms（编码时间占主要）                              │
 └─────────────────────────────────────────────────────────────────┘
@@ -330,7 +330,7 @@ SimilarityEngine（相似度引擎）
 **功能需求：**
 
 用户输入：
-- 图片image_path
+- 图片file_path（支持数组，一次处理多个文件）
 - 标签层级选择（level1, level2, attributes, all）
 
 返回结果：
@@ -411,8 +411,6 @@ SimilarityEngine（相似度引擎）
 **函数接口设计：**
 
 ```
-Go调用接口：
-GenerateHierarchicalTags(recordId int, tagLevel string) (HierarchicalTagResult, error)
 
 Python处理流程：
 1. 接收JSON请求：
@@ -421,7 +419,7 @@ Python处理流程：
      "action": "tag_detect",
      "params": {
        "record_id": 1001,
-       "image_path": "/path/to/image.jpg",
+       "file_path": "/path/to/image.jpg",
        "tag_level": "all",  // "level1", "level2", "attributes", "all"
        "top_k_level1": 3,
        "top_k_level2": 5,
@@ -435,7 +433,7 @@ Python处理流程：
      "success": true,
      "data": {
        "record_id": 1001,
-       "image_path": "/path/to/image.jpg",
+       "file_path": "/path/to/image.jpg",
        "primary_category": {
          "id": "travel",
          "name": "旅游出行",
@@ -600,9 +598,6 @@ description = "这是一张风景照片，包含山脉和日落景象，拍摄�
 **函数接口设计：**
 
 ```
-Go调用接口：
-GenerateDescription(recordId int, language string) (string, error)
-
 Python处理流程：
 1. 接收JSON请求：
    {
@@ -642,7 +637,7 @@ SimilarityEngine 提供多种相似度计算功能：
 │  - 说明：等同于 SearchEngine.search_by_image                      │
 ├─────────────────────────────────────────────────────────────────┤
 │  find_similar_by_image（图搜图，外部图片）                        │
-│  - 输入：图片路径 image_path（图片不在索引中）                     │
+│  - 输入：图片路径 file_path 或 file_paths 数组（图片不在索引中）   │
 │  - 流程：编码图片 → FAISS搜索 → 返回结果                          │
 │  - 性能：~50-100ms（编码时间占主要）                              │
 ├─────────────────────────────────────────────────────────────────┤
@@ -693,9 +688,6 @@ SimilarityEngine 提供多种相似度计算功能：
 **函数接口设计：**
 
 ```
-Go调用接口：
-FindSimilarImages(recordId int, topK int, minSimilarity float) ([]SimilarResult, error)
-
 Python处理流程：
 1. 接收JSON请求：
    {
@@ -773,9 +765,6 @@ Python处理流程：
 **函数接口设计：**
 
 ```
-Go调用接口：
-DetectSimilarGroups(minSimilarity float, scope string, recordIds []int) ([]SimilarGroup, error)
-
 Python处理流程：
 1. 接收JSON请求：
    {
@@ -927,10 +916,6 @@ Go相册主体 → Python AI模块（通过process_file.json）
 **同步函数接口设计：**
 
 ```
-Go调用接口：
-SyncAllImages() error  // 同步所有图片
-RebuildIndex() error   // 重建索引
-
 Python处理流程：
 1. 接收JSON请求：
    {
@@ -949,7 +934,7 @@ Python处理流程：
      "files": [
        {
          "record_id": 1001,
-         "image_path": "/path/to/image.jpg",
+         "file_path": "/path/to/image.jpg",
          "file_hash": "abc123",  // Go计算的文件hash
          "status": "pending"
        },
@@ -1021,7 +1006,7 @@ Python处理流程：
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │  Go生成process_file.json                                     │
-│  - 从SQLite获取所有图片record_id、image_path                   │
+│  - 从SQLite获取所有图片record_id、file_path                   │
 │  - Go计算每个文件的file_hash（文件内容hash）                    │
 │  - 所有文件status设为pending                                  │
 └─────────────────────────────────────────────────────────────┘
@@ -1204,13 +1189,13 @@ Python端保证：
   "files": [
     {
       "record_id": 5001,
-      "image_path": "/path/to/image.jpg",
+      "file_path": "/path/to/image.jpg",
       "file_hash": "abc123",
       "status": "pending"  // "pending", "processing", "completed", "failed"
     },
     {
       "record_id": 5002,
-      "image_path": "/path/to/image2.jpg",
+      "file_path": "/path/to/image2.jpg",
       "file_hash": "def456",
       "status": "processing"
     },
@@ -1235,12 +1220,6 @@ Python端保证：
 **Go触发请求接口：**
 
 ```
-Go调用接口：
-StartIndexBuild(rebuild bool) error
-StopIndexBuild() error
-ContinueIndexBuild() error
-GetIndexBuildProgress() (ProgressInfo, error)
-
 Python处理流程：
 1. 接收JSON请求：
    {
@@ -1317,9 +1296,6 @@ FAISS索引配置（中规模1万-10万张）：
 **手动重建API：**
 
 ```
-Go调用接口：
-RebuildIndex() error
-
 Python处理流程：
 1. 接收JSON请求：
    {

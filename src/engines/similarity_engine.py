@@ -178,70 +178,120 @@ class SimilarityEngine(BaseEngine):
     
     def _find_similar_by_image(self, params: dict) -> dict:
         """
-        Find similar images by image path (encode image first)
+        Find similar images by file path (encode image first)
+        Supports single file_path or batch file_paths array.
         
         Args:
             params: {
-                "image_path": "/path/to/image.jpg",
+                "file_path": "/path/to/image.jpg",   // single file
+                "file_paths": ["/path/to/1.jpg", ...], // or batch files
                 "top_k": 10,
                 "min_similarity": 0.8
             }
         
         Returns:
-            {
-                "image_path": "/path/to/image.jpg",
+            Single: {
+                "file_path": "/path/to/image.jpg",
                 "similar_images": [...],
-                "query_time_ms": 50.0,
-                "encode_time_ms": 45.0,
-                "search_time_ms": 5.0
+                ...
+            }
+            Batch: {
+                "results": [ { "file_path": ..., "similar_images": [...] }, ... ],
+                "total_time_ms": ...
             }
         """
         from engines.clip_encoder import CLIPEncoder
         
         self._ensure_index_loaded()
         
-        image_path = params.get("image_path")
-        if image_path is None:
-            raise ValueError("image_path is required")
-        
         top_k = params.get("top_k", 10)
         min_similarity = params.get("min_similarity", 0.0)
         
-        start_time = time.time()
+        file_paths = params.get("file_paths", [])
+        single_path = params.get("file_path")
+        
+        if single_path and not file_paths:
+            file_paths = [single_path]
+        
+        if not file_paths:
+            raise ValueError("file_path or file_paths is required")
         
         clip_encoder = CLIPEncoder()
         
-        encode_start = time.time()
-        query_vector = clip_encoder.encode_image(image_path)
-        encode_time_ms = (time.time() - encode_start) * 1000
+        if len(file_paths) == 1 and single_path:
+            start_time = time.time()
+            
+            encode_start = time.time()
+            query_vector = clip_encoder.encode_image(file_paths[0])
+            encode_time_ms = (time.time() - encode_start) * 1000
+            
+            if query_vector.shape[0] != 1:
+                query_vector = query_vector.reshape(1, -1)
+            
+            search_start = time.time()
+            results = self.index_manager.search_by_vector(query_vector, top_k=top_k + 5)
+            search_time_ms = (time.time() - search_start) * 1000
+            
+            filtered_results = []
+            for result in results:
+                if result["similarity"] >= min_similarity:
+                    filtered_results.append(result)
+            
+            filtered_results = filtered_results[:top_k]
+            
+            query_time_ms = (time.time() - start_time) * 1000
+            
+            print(f"Found {len(filtered_results)} similar images for {file_paths[0]} in {query_time_ms:.2f}ms", file=sys.stderr)
+            
+            return {
+                "file_path": file_paths[0],
+                "similar_images": filtered_results,
+                "query_time_ms": round(query_time_ms, 2),
+                "encode_time_ms": round(encode_time_ms, 2),
+                "search_time_ms": round(search_time_ms, 2),
+                "total_count": len(filtered_results),
+                "min_similarity": min_similarity,
+                "top_k": top_k
+            }
         
-        if query_vector.shape[0] != 1:
-            query_vector = query_vector.reshape(1, -1)
+        start_time = time.time()
+        batch_results = []
         
-        search_start = time.time()
-        results = self.index_manager.search_by_vector(query_vector, top_k=top_k + 5)
-        search_time_ms = (time.time() - search_start) * 1000
+        for fp in file_paths:
+            encode_start = time.time()
+            query_vector = clip_encoder.encode_image(fp)
+            encode_time_ms = (time.time() - encode_start) * 1000
+            
+            if query_vector.shape[0] != 1:
+                query_vector = query_vector.reshape(1, -1)
+            
+            search_start = time.time()
+            results = self.index_manager.search_by_vector(query_vector, top_k=top_k + 5)
+            search_time_ms = (time.time() - search_start) * 1000
+            
+            filtered_results = []
+            for result in results:
+                if result["similarity"] >= min_similarity:
+                    filtered_results.append(result)
+            
+            filtered_results = filtered_results[:top_k]
+            
+            batch_results.append({
+                "file_path": fp,
+                "similar_images": filtered_results,
+                "encode_time_ms": round(encode_time_ms, 2),
+                "search_time_ms": round(search_time_ms, 2),
+                "total_count": len(filtered_results)
+            })
         
-        filtered_results = []
-        for result in results:
-            if result["similarity"] >= min_similarity:
-                filtered_results.append(result)
+        total_time_ms = (time.time() - start_time) * 1000
         
-        filtered_results = filtered_results[:top_k]
-        
-        query_time_ms = (time.time() - start_time) * 1000
-        
-        print(f"Found {len(filtered_results)} similar images for {image_path} in {query_time_ms:.2f}ms", file=sys.stderr)
+        print(f"Batch find_similar_by_image completed for {len(file_paths)} files in {total_time_ms:.2f}ms", file=sys.stderr)
         
         return {
-            "image_path": image_path,
-            "similar_images": filtered_results,
-            "query_time_ms": round(query_time_ms, 2),
-            "encode_time_ms": round(encode_time_ms, 2),
-            "search_time_ms": round(search_time_ms, 2),
-            "total_count": len(filtered_results),
-            "min_similarity": min_similarity,
-            "top_k": top_k
+            "results": batch_results,
+            "total_time_ms": round(total_time_ms, 2),
+            "batch_size": len(file_paths)
         }
     
     def _batch_find_similar(self, params: dict) -> dict:

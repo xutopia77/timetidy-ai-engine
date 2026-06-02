@@ -10,7 +10,7 @@ This engine provides:
 Usage:
     result = engine.process({
         "action": "classify_hierarchical",
-        "image_path": "photo.jpg"
+        "file_path": "photo.jpg"
     })
 """
 
@@ -281,11 +281,11 @@ class HierarchicalTagEngine(BaseEngine):
         
         return results
     
-    def generate_tags(self, image_path: str, record_id: Optional[int] = None, tag_level: str = "all") -> Dict:
+    def generate_tags(self, file_path: str, record_id: Optional[int] = None, tag_level: str = "all") -> Dict:
         """Generate hierarchical tags for an image
         
         Args:
-            image_path: Image file path
+            file_path: Image file path
             record_id: Optional record ID
             tag_level: Tag level to generate ("level1", "level2", "attributes", "all")
         
@@ -297,16 +297,16 @@ class HierarchicalTagEngine(BaseEngine):
         level2_threshold = settings.get("level2_threshold", 0.20)
         attribute_threshold = settings.get("attribute_threshold", 0.25)
         
-        print(f"Generating tags for image: {image_path}", file=sys.stderr)
+        print(f"Generating tags for image: {file_path}", file=sys.stderr)
         print(f"Thresholds: level1={level1_threshold}, level2={level2_threshold}, attributes={attribute_threshold}", file=sys.stderr)
         
-        image_vector = self._search_engine.encode_image(image_path)
+        image_vector = self._search_engine.encode_image(file_path)
         image_vector = image_vector.squeeze(0)
         
         print(f"Image vector shape: {image_vector.shape}", file=sys.stderr)
         
         result = {
-            "image_path": str(image_path),
+            "file_path": str(file_path),
             "record_id": record_id,
         }
         
@@ -396,7 +396,7 @@ class HierarchicalTagEngine(BaseEngine):
         
         return result
     
-    def classify_hierarchical(self, image_path: str) -> Dict:
+    def classify_hierarchical(self, file_path: str) -> Dict:
         """Full hierarchical classification
         
         Strategy:
@@ -407,12 +407,12 @@ class HierarchicalTagEngine(BaseEngine):
         5. Attribute classification
         
         Args:
-            image_path: Image file path
+            file_path: Image file path
         
         Returns:
             Complete classification result
         """
-        image_vector = self._search_engine.encode_image(image_path)
+        image_vector = self._search_engine.encode_image(file_path)
         image_vector = image_vector.squeeze(0)  # Remove batch dimension: (1, 1024) -> (1024,)
         
         level1_candidates = self.classify_level1(image_vector)
@@ -433,7 +433,7 @@ class HierarchicalTagEngine(BaseEngine):
         attributes = self.classify_attributes(image_vector)
         
         return {
-            "image_path": str(image_path),
+            "file_path": str(file_path),
             "level1": best_path["level1"],
             "level2": best_path["level2"],
             "combined_score": best_path["combined_score"],
@@ -447,22 +447,22 @@ class HierarchicalTagEngine(BaseEngine):
         action = params.get("action", "generate_tags")
         
         if action == "generate_tags":
-            image_path = params.get("image_path", "")
+            file_path = params.get("file_path", "")
             record_id = params.get("record_id", None)
             tag_level = params.get("tag_level", "all")
             
-            if not image_path:
-                raise ValueError("image_path is required")
+            if not file_path:
+                raise ValueError("file_path is required")
             
-            return self.generate_tags(image_path, record_id, tag_level)
+            return self.generate_tags(file_path, record_id, tag_level)
         
         elif action == "classify_hierarchical":
-            image_path = params.get("image_path", "")
+            file_path = params.get("file_path", "")
             
-            if not image_path:
-                raise ValueError("image_path is required")
+            if not file_path:
+                raise ValueError("file_path is required")
             
-            return self.classify_hierarchical(image_path)
+            return self.classify_hierarchical(file_path)
         
         elif action == "get_config":
             return {

@@ -76,7 +76,7 @@ def create_process_file(image_files: List[str], start_id: int = 1001, output_pat
         
         files.append({
             "record_id": record_id,
-            "image_path": image_path,
+            "file_path": image_path,
             "file_hash": file_hash,
             "status": "pending"
         })
@@ -278,20 +278,20 @@ def generate_markdown_report(test_results: Dict, output_path: str, test_data_dir
         lines.append("## Tag Detection Results")
         lines.append("")
         
-        image_path = tag_results.get("image_path", "")
+        file_path = tag_results.get("file_path", "")
         level1_tags = tag_results.get("level1_tags", [])
         level2_tags = tag_results.get("level2_tags", [])
         attribute_tags = tag_results.get("attribute_tags", [])
         all_tags = tag_results.get("all_tags", [])
         
-        if image_path:
-            lines.append(f"### Image: {Path(image_path).name}")
+        if file_path:
+            lines.append(f"### Image: {Path(file_path).name}")
             lines.append("")
             
             md_file_dir = Path(output_path).parent
-            rel_path = get_relative_path(Path(image_path), md_file_dir)
+            rel_path = get_relative_path(Path(file_path), md_file_dir)
             
-            lines.append(f"![{Path(image_path).name}]({rel_path})")
+            lines.append(f"![{Path(file_path).name}]({rel_path})")
             lines.append("")
             lines.append(f"**Path**: `{rel_path}`")
             lines.append("")
@@ -780,7 +780,7 @@ def main():
         
         tag_params = {
             "action": "generate_tags",
-            "image_path": test_image,
+            "file_path": test_image,
             "tag_level": "all"
         }
         
@@ -822,7 +822,7 @@ def main():
             
             test_results["tag_detect"] = {
                 "success": True,
-                "image_path": test_image,
+                "file_path": test_image,
                 "level1_tags": level1_tags,
                 "level2_tags": level2_tags,
                 "attribute_tags": attribute_tags,
@@ -832,7 +832,7 @@ def main():
             print("✗ Tag detection failed")
             test_results["tag_detect"] = {
                 "success": False,
-                "image_path": test_image,
+                "file_path": test_image,
                 "tags": []
             }
     
@@ -958,7 +958,7 @@ def main():
             
             find_similar_by_image_params = {
                 "action": "find_similar_by_image",
-                "image_path": test_image,
+                "file_path": test_image,
                 "top_k": args.top_k,
                 "min_similarity": 0.5
             }
@@ -989,7 +989,7 @@ def main():
                 
                 test_results["find_similar_by_image"] = {
                     "success": True,
-                    "image_path": test_image,
+                    "file_path": test_image,
                     "similar_images": similar_images,
                     "query_time_ms": query_time,
                     "encode_time_ms": encode_time,

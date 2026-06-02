@@ -690,9 +690,9 @@
     ]
   },
   "settings": {
-    "level1_threshold": 0.25,
-    "level2_threshold": 0.20,
-    "attribute_threshold": 0.25,
+    "level1_threshold": 0.15,
+    "level2_threshold": 0.10,
+    "attribute_threshold": 0.15,
     "top_k_level1": 3,
     "top_k_level2": 5,
     "top_k_attributes": 2,

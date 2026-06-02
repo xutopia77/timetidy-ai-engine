@@ -19,7 +19,7 @@ import sys
 import json
 import numpy as np
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 from dataclasses import dataclass
 from engines.base import BaseEngine
 from engines.search_engine import SearchEngine
@@ -281,6 +281,121 @@ class HierarchicalTagEngine(BaseEngine):
         
         return results
     
+    def generate_tags(self, image_path: str, record_id: Optional[int] = None, tag_level: str = "all") -> Dict:
+        """Generate hierarchical tags for an image
+        
+        Args:
+            image_path: Image file path
+            record_id: Optional record ID
+            tag_level: Tag level to generate ("level1", "level2", "attributes", "all")
+        
+        Returns:
+            Hierarchical tag results
+        """
+        settings = self._config.get("settings", {})
+        level1_threshold = settings.get("level1_threshold", 0.25)
+        level2_threshold = settings.get("level2_threshold", 0.20)
+        attribute_threshold = settings.get("attribute_threshold", 0.25)
+        
+        print(f"Generating tags for image: {image_path}", file=sys.stderr)
+        print(f"Thresholds: level1={level1_threshold}, level2={level2_threshold}, attributes={attribute_threshold}", file=sys.stderr)
+        
+        image_vector = self._search_engine.encode_image(image_path)
+        image_vector = image_vector.squeeze(0)
+        
+        print(f"Image vector shape: {image_vector.shape}", file=sys.stderr)
+        
+        result = {
+            "image_path": str(image_path),
+            "record_id": record_id,
+        }
+        
+        if tag_level in ["all", "level1"]:
+            level1_candidates = self.classify_level1(image_vector)
+            
+            print(f"Level1 candidates (Top-{self._top_k}):", file=sys.stderr)
+            for i, candidate in enumerate(level1_candidates, 1):
+                print(f"  {i}. {candidate['name']}: score={candidate['score']:.4f} (threshold={level1_threshold})", file=sys.stderr)
+            
+            level1_tags = []
+            for candidate in level1_candidates:
+                if candidate["score"] >= level1_threshold:
+                    level1_tags.append({
+                        "id": candidate["id"],
+                        "name": candidate["name"],
+                        "confidence": round(candidate["score"], 4),
+                        "level": 1,
+                    })
+            
+            print(f"Level1 tags after filtering: {len(level1_tags)} tags", file=sys.stderr)
+            result["level1_tags"] = level1_tags
+            
+            if level1_tags:
+                result["primary_category"] = level1_tags[0]
+        
+        if tag_level in ["all", "level2"]:
+            if result.get("primary_category"):
+                parent_id = result["primary_category"]["id"]
+                level2_result = self.classify_level2(image_vector, parent_id)
+                
+                print(f"Level2 result for parent '{parent_id}': {level2_result['name']}, score={level2_result['score']:.4f}", file=sys.stderr)
+                
+                level2_tags = []
+                if level2_result["score"] >= level2_threshold:
+                    level2_tags.append({
+                        "id": level2_result["id"],
+                        "name": level2_result["name"],
+                        "confidence": round(level2_result["score"], 4),
+                        "level": 2,
+                        "parent_id": parent_id,
+                    })
+                
+                print(f"Level2 tags after filtering: {len(level2_tags)} tags", file=sys.stderr)
+                result["level2_tags"] = level2_tags
+            else:
+                print(f"No primary category, skipping level2", file=sys.stderr)
+                result["level2_tags"] = []
+        
+        if tag_level in ["all", "attributes"]:
+            attributes = self.classify_attributes(image_vector)
+            attribute_tags = []
+            
+            print(f"Attributes:", file=sys.stderr)
+            for attr_type, attr_results in attributes.items():
+                print(f"  {attr_type}:", file=sys.stderr)
+                for i, attr in enumerate(attr_results, 1):
+                    print(f"    {i}. {attr['name']}: score={attr['score']:.4f} (threshold={attribute_threshold})", file=sys.stderr)
+                
+                for attr in attr_results:
+                    if attr["score"] >= attribute_threshold:
+                        attribute_tags.append({
+                            "id": attr["id"],
+                            "name": attr["name"],
+                            "confidence": round(attr["score"], 4),
+                            "level": "attribute",
+                            "type": attr_type,
+                        })
+            
+            attribute_tags.sort(key=lambda x: x["confidence"], reverse=True)
+            print(f"Attribute tags after filtering: {len(attribute_tags)} tags", file=sys.stderr)
+            result["attribute_tags"] = attribute_tags
+        
+        if tag_level == "all":
+            all_tags = []
+            if result.get("level1_tags"):
+                all_tags.extend(result["level1_tags"])
+            if result.get("level2_tags"):
+                all_tags.extend(result["level2_tags"])
+            if result.get("attribute_tags"):
+                all_tags.extend(result["attribute_tags"])
+            
+            all_tags.sort(key=lambda x: x["confidence"], reverse=True)
+            result["all_tags"] = all_tags
+        
+        print(f"Total tags generated: {len(result.get('all_tags', []))}", file=sys.stderr)
+        
+        return result
+    
     def classify_hierarchical(self, image_path: str) -> Dict:
         """Full hierarchical classification
         
@@ -329,9 +444,19 @@ class HierarchicalTagEngine(BaseEngine):
     def process(self, params: dict) -> dict:
         self._ensure_model()
         
-        action = params.get("action", "classify_hierarchical")
+        action = params.get("action", "generate_tags")
         
-        if action == "classify_hierarchical":
+        if action == "generate_tags":
+            image_path = params.get("image_path", "")
+            record_id = params.get("record_id", None)
+            tag_level = params.get("tag_level", "all")
+            
+            if not image_path:
+                raise ValueError("image_path is required")
+            
+            return self.generate_tags(image_path, record_id, tag_level)
+        
+        elif action == "classify_hierarchical":
             image_path = params.get("image_path", "")
             
             if not image_path:
@@ -352,6 +477,19 @@ class HierarchicalTagEngine(BaseEngine):
                     for k, v in self._attribute_categories.items()
                 },
                 "settings": self._config.get("settings", {}),
+            }
+        
+        elif action == "get_available_tags":
+            return {
+                "level1_tags": [{"id": c.id, "name": c.name} for c in self._level1_categories],
+                "level2_tags": {
+                    k: [{"id": c.id, "name": c.name} for c in v] 
+                    for k, v in self._level2_categories.items()
+                },
+                "attribute_tags": {
+                    k: [{"id": c.id, "name": c.name} for c in v] 
+                    for k, v in self._attribute_categories.items()
+                },
             }
         
         elif action == "reload_config":

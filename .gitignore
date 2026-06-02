@@ -48,3 +48,7 @@ src/models/tokenizer_ViT_H_14.json
 src/models/tokenizer_ViT_L_14.json
 test_results/*.json
 test_results/*.md
+src/data/index/ai_metadata.json
+src/data/index/faiss_index.bin
+src/data/index/index_config.json
+tmp/test.log

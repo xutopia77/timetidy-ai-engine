@@ -552,6 +552,7 @@ func GenerateHierarchicalTags(recordId int, tagLevel string) (*HierarchicalTagRe
 ```
 
 Python处理流程：
+```text
 1. 接收JSON请求：
    {
      "id": "1234567890",
@@ -1038,7 +1039,7 @@ Response:
 
 ### 4. FAISS索引管理设计
 
-#### 4.1 索引初始化和构建
+#### 4.1 索引初始化和构建（基于进度文件）
 
 **首次构建流程：**
 
@@ -1046,30 +1047,334 @@ Response:
 场景：用户首次使用AI功能，FAISS索引不存在
 
 流程：
-1. Go调用Python初始化API（POST /api/v1/index/init）
-2. Python读取SQLite获取所有图片record_id和路径
-3. 批量提取特征（batch_size=32）
-4. 训练FAISS索引（IndexIVFFlat需要训练）
-5. 添加向量到索引（使用record_id作为ID）
-6. 保存索引文件和元数据文件
-7. 返回构建结果
+1. Go扫描图片目录，整理所有待处理文件
+2. Go将待处理文件列表写入进度文件（process_file.json）
+3. Go触发AI FAISS索引构建（发送start请求）
+4. Python读取进度文件，获取待处理文件列表
+5. Python批量处理文件（batch_size控制）
+6. Python处理一定量文件后，更新进度文件
+7. Python构建FAISS索引并保存
+8. Go可以随时触发停止或继续请求
 
-API设计：
-POST /api/v1/index/init
-Request:
+进度文件设计：
+位置：ai-engine/src/config/process_file.json
+格式：
 {
-  "rebuild": false  // 是否强制重建
+  "version": "1.0.0",
+  "batch": 10,  // 每处理10个文件更新一次进度文件
+  "files": [
+    {
+      "record_id": 5001,
+      "image_path": "/path/to/image.jpg",
+      "status": "idle"  // "idle", "processing", "completed", "failed"
+    },
+    {
+      "record_id": 5002,
+      "image_path": "/path/to/image2.jpg",
+      "status": "processing"
+    },
+    // ... 所有图片列表
+  ],
+  "total_files": 10000,
+  "processed_files": 5000,
+  "failed_files": 10,
+  "start_time": "2024-01-01 10:00:00",
+  "last_update_time": "2024-01-01 12:00:00"
 }
 
-Response:
-{
-  "success": true,
-  "total_images": 50000,
-  "build_time_seconds": 300,
-  "index_file": "faiss_index.bin",
-  "metadata_file": "ai_metadata.json",
-  "message": "Index built successfully"
+状态说明：
+- idle: 待处理（未开始）
+- processing: 正在处理
+- completed: 已完成
+- failed: 处理失败
+```
+
+**Go触发请求接口：**
+
+```
+Go调用接口：
+StartIndexBuild(rebuild bool) error
+StopIndexBuild() error
+ContinueIndexBuild() error
+GetIndexBuildProgress() (ProgressInfo, error)
+
+Python处理流程：
+1. 接收JSON请求：
+   {
+     "id": "1234567890",
+     "action": "index_init",
+     "params": {
+       "operation": "start",  // "start", "stop", "continue", "get_progress"
+       "rebuild": false  // 是否重建索引
+     }
+   }
+
+2. 处理请求并返回JSON响应：
+   {
+     "id": "1234567890",
+     "success": true,
+     "data": {
+       "operation": "start",
+       "total_files": 10000,
+       "processed_files": 0,
+       "status": "processing",
+       "message": "Index build started"
+     }
+   }
+```
+
+**Go调用示例：**
+
+```go
+// Go触发FAISS索引构建（首次启动）
+func StartIndexBuild(rebuild bool) error {
+    // 1. 扫描图片目录，整理待处理文件列表
+    imageFiles := scanImageDirectory()
+    
+    // 2. 生成进度文件
+    progressFile := generateProgressFile(imageFiles)
+    saveProgressFile("ai-engine/src/config/process_file.json", progressFile)
+    
+    // 3. 发送start请求到Python
+    params := map[string]interface{}{
+        "operation": "start",
+        "rebuild": rebuild,
+    }
+    
+    resp, err := ai.SendRequest("index_init", params)
+    if err != nil {
+        return err
+    }
+    
+    // 4. 监控进度
+    monitorBuildProgress()
+    
+    return nil
 }
+
+// Go停止索引构建
+func StopIndexBuild() error {
+    params := map[string]interface{}{
+        "operation": "stop",
+    }
+    
+    resp, err := ai.SendRequest("index_init", params)
+    if err != nil {
+        return err
+    }
+    
+    return nil
+}
+
+// Go继续索引构建
+func ContinueIndexBuild() error {
+    params := map[string]interface{}{
+        "operation": "continue",
+    }
+    
+    resp, err := ai.SendRequest("index_init", params)
+    if err != nil {
+        return err
+    }
+    
+    return nil
+}
+
+// Go获取构建进度
+func GetIndexBuildProgress() (ProgressInfo, error) {
+    params := map[string]interface{}{
+        "operation": "get_progress",
+    }
+    
+    resp, err := ai.SendRequest("index_init", params)
+    if err != nil {
+        return ProgressInfo{}, err
+    }
+    
+    var progress ProgressInfo
+    json.Unmarshal(resp.Data, &progress)
+    
+    return progress, nil
+}
+
+// 生成进度文件
+func generateProgressFile(imageFiles []string) ProgressFile {
+    files := []FileRecord{}
+    for i, imagePath := range imageFiles {
+        files.append(FileRecord{
+            RecordID: 1000 + i,
+            ImagePath: imagePath,
+            Status: "idle",
+        })
+    }
+    
+    return ProgressFile{
+        Version: "1.0.0",
+        Batch: 10,
+        Files: files,
+        TotalFiles: len(files),
+        ProcessedFiles: 0,
+        FailedFiles: 0,
+        StartTime: time.Now().Format("2006-01-02 15:04:05"),
+    }
+}
+```
+
+**Python处理逻辑：**
+
+```python
+class IndexInitEngine(BaseEngine):
+    def __init__(self):
+        self.clip_encoder = CLIPEncoder()
+        self.index_manager = FAISSIndexManager()
+        self.progress_file = Path("config/process_file.json")
+        self.is_building = False
+        self.stop_flag = False
+        
+    def process(self, params: dict) -> dict:
+        operation = params.get("operation", "")
+        rebuild = params.get("rebuild", False)
+        
+        if operation == "start":
+            return self._start_build(rebuild)
+        
+        elif operation == "stop":
+            return self._stop_build()
+        
+        elif operation == "continue":
+            return self._continue_build()
+        
+        elif operation == "get_progress":
+            return self._get_progress()
+        
+        else:
+            raise ValueError(f"Unknown operation: {operation}")
+    
+    def _start_build(self, rebuild: bool) -> dict:
+        # 1. 检查是否需要重建
+        if rebuild:
+            self.index_manager.delete_index()
+        
+        # 2. 读取进度文件
+        progress_data = self._load_progress_file()
+        
+        # 3. 开始构建
+        self.is_building = True
+        self.stop_flag = False
+        
+        # 4. 异步处理文件
+        self._process_files_async(progress_data)
+        
+        return {
+            "success": True,
+            "operation": "start",
+            "total_files": progress_data["total_files"],
+            "status": "processing",
+            "message": "Index build started"
+        }
+    
+    def _process_files_async(self, progress_data: dict):
+        batch_size = progress_data.get("batch", 10)
+        files = progress_data.get("files", [])
+        
+        processed_count = 0
+        
+        for file_record in files:
+            # 检查停止标志
+            if self.stop_flag:
+                self._save_progress_file(progress_data)
+                break
+            
+            # 只处理idle状态的文件
+            if file_record["status"] != "idle":
+                continue
+            
+            # 标记为processing
+            file_record["status"] = "processing"
+            
+            try:
+                # 提取特征
+                features = self.clip_encoder.encode_image(file_record["image_path"])
+                
+                # 添加到索引
+                self.index_manager.add_vector(
+                    features, 
+                    file_record["record_id"],
+                    file_record.get("image_hash", "")
+                )
+                
+                # 标记为completed
+                file_record["status"] = "completed"
+                processed_count += 1
+                
+            except Exception as e:
+                # 标记为failed
+                file_record["status"] = "failed"
+                print(f"Failed to process {file_record['image_path']}: {e}", file=sys.stderr)
+            
+            # 每处理batch_size个文件，更新进度文件
+            if processed_count % batch_size == 0:
+                self._update_progress_stats(progress_data)
+                self._save_progress_file(progress_data)
+                self.index_manager.save_index()
+        
+        # 处理完成，保存最终进度
+        if not self.stop_flag:
+            self._update_progress_stats(progress_data)
+            self._save_progress_file(progress_data)
+            self.index_manager.save_index()
+            self.is_building = False
+    
+    def _stop_build(self) -> dict:
+        self.stop_flag = True
+        self.is_building = False
+        
+        # 保存当前进度
+        progress_data = self._load_progress_file()
+        self._save_progress_file(progress_data)
+        self.index_manager.save_index()
+        
+        return {
+            "success": True,
+            "operation": "stop",
+            "message": "Index build stopped, progress saved"
+        }
+    
+    def _continue_build(self) -> dict:
+        # 读取进度文件
+        progress_data = self._load_progress_file()
+        
+        # 继续处理
+        self.is_building = True
+        self.stop_flag = False
+        self._process_files_async(progress_data)
+        
+        return {
+            "success": True,
+            "operation": "continue",
+            "message": "Index build continued"
+        }
+    
+    def _load_progress_file(self) -> dict:
+        if self.progress_file.exists():
+            with open(self.progress_file, "r", encoding="utf-8") as f:
+                return json.load(f)
+        else:
+            raise FileNotFoundError(f"Progress file not found: {self.progress_file}")
+    
+    def _save_progress_file(self, progress_data: dict):
+        with open(self.progress_file, "w", encoding="utf-8") as f:
+            json.dump(progress_data, f, indent=2, ensure_ascii=False)
+    
+    def _update_progress_stats(self, progress_data: dict):
+        files = progress_data.get("files", [])
+        
+        processed = sum(1 for f in files if f["status"] == "completed")
+        failed = sum(1 for f in files if f["status"] == "failed")
+        
+        progress_data["processed_files"] = processed
+        progress_data["failed_files"] = failed
+        progress_data["last_update_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 ```
 
 **索引配置：**
@@ -1077,14 +1382,20 @@ Response:
 ```
 FAISS索引配置（中规模1万-10万张）：
 - 索引类型: IndexIDMap2(IndexIVFFlat)
-- feature_dim: 1024（Chinese-CLIP ViT-L-14）
+- feature_dim: 1024（Chinese-CLIP ViT-H-14）
 - nlist: 100-300（根据图片数量调整）
 - nprobe: 10（搜索时查询10个聚类）
 - 训练样本: 1000-5000张（用于聚类训练）
 
+进度文件配置：
+- 文件格式: JSON
+- 存储内容: version, batch, files列表, 统计信息
+- 文件大小: ~1-2MB（10万张图片）
+- 更新频率: 每处理batch个文件更新一次
+
 元数据文件配置：
 - 文件格式: JSON
-- 存储内容: vector_id, record_id, image_hash, deleted
+- 存储内容: vector_id, record_id, deleted
 - 文件大小: ~1-2MB（10万张图片）
 ```
 
@@ -1097,31 +1408,18 @@ FAISS索引配置（中规模1万-10万张）：
 - faiss_index.bin: FAISS索引文件（~400MB，10万张）
 - ai_metadata.json: 元数据文件（~1-2MB）
 - index_config.json: 索引配置文件
+- process_file.json: 进度文件（~1-2MB）
 
 存储位置：
-- 默认: ai-engine/data/index/
+- 默认: ai-engine/src/data/index/
+- 进度文件: ai-engine/src/config/process_file.json
 - 可配置: 通过环境变量指定
 
 加载流程：
 1. Python启动时检查索引文件是否存在
 2. 如果存在，加载索引和元数据
-3. 如果不存在，等待Go调用初始化API
+3. 如果不存在，等待Go调用start请求
 4. 加载时间: ~1-2秒（10万张图片）
-```
-
-**索引保存策略：**
-
-```
-保存时机：
-- 添加新图片后立即保存
-- 删除图片后立即保存
-- 批量操作完成后保存
-- 定期自动保存（如每小时）
-
-备份策略：
-- 保留最近3个版本备份
-- 备份文件: faiss_index.bin.bak1, faiss_index.bin.bak2, faiss_index.bin.bak3
-- 检测损坏时自动恢复
 ```
 
 #### 4.3 索引重建和维护
@@ -1129,51 +1427,92 @@ FAISS索引配置（中规模1万-10万张）：
 **手动重建API：**
 
 ```
-POST /api/v1/index/rebuild
-Request:
-{
-  "reason": "performance_optimization"  // 或 "data_corruption"
-}
+Go调用接口：
+RebuildIndex() error
 
-Response:
-{
-  "success": true,
-  "task_id": "rebuild_task_123",
-  "estimated_time_seconds": 300,
-  "message": "Index rebuild task started"
-}
+Python处理流程：
+1. 接收JSON请求：
+   {
+     "id": "1234567890",
+     "action": "index_init",
+     "params": {
+       "operation": "start",
+       "rebuild": true
+     }
+   }
+
+2. 处理请求并返回JSON响应：
+   {
+     "id": "1234567890",
+     "success": true,
+     "data": {
+       "operation": "start",
+       "rebuild": true,
+       "message": "Index rebuild started"
+     }
+   }
 
 重建流程：
-1. 清空现有索引
-2. 从SQLite获取所有图片信息
-3. 批量提取特征
-4. 训练新索引
-5. 添加所有向量
-6. 保存索引和元数据
-7. 通知Go重建完成
+1. Go重新生成进度文件（所有文件状态设为idle）
+2. Go发送start请求（rebuild=true）
+3. Python删除现有索引
+4. Python读取进度文件
+5. Python重新处理所有文件
+6. Python构建新索引
+7. Python保存索引和进度文件
 ```
 
-**定期维护：**
+
+**进度监控：**
 
 ```
-维护任务：
-- 每周清理已删除向量（如果使用标记删除策略）
-- 每月优化索引参数（根据实际使用情况）
-- 每季度评估索引性能
+Go监控进度：
+1. 调用get_progress请求
+2. 获取当前处理进度
+3. 显示进度条给用户
+4. 检测是否完成或失败
 
-维护API：
-POST /api/v1/index/maintain
-Request:
-{
-  "task_type": "clean_deleted"  // 或 "optimize_params"
-}
-
-Response:
+进度响应示例：
 {
   "success": true,
-  "cleaned_count": 50,  // 清理了50个已删除向量
-  "message": "Maintenance completed"
+  "data": {
+    "total_files": 10000,
+    "processed_files": 5000,
+    "failed_files": 10,
+    "status": "processing",  // "idle", "processing", "completed", "stopped"
+    "progress_percent": 50.0,
+    "estimated_time_remaining": "2 hours",
+    "last_update_time": "2024-01-01 12:00:00"
+  }
 }
+```
+
+**异常处理：**
+
+```
+异常场景：
+1. Python进程崩溃：
+   - Go检测到进程退出
+   - Go重新启动Python进程
+   - Go发送continue请求
+   - Python从进度文件恢复
+
+2. 索引文件损坏：
+   - Python检测到索引加载失败
+   - Python返回错误信息
+   - Go发送rebuild请求
+   - Python重建索引
+
+3. 进度文件损坏：
+   - Python检测到进度文件格式错误
+   - Python返回错误信息
+   - Go重新生成进度文件
+   - Go发送start请求
+
+4. 处理失败过多：
+   - Python检测到failed_files超过阈值
+   - Python返回警告信息
+   - Go决定是否继续或停止
 ```
 
 ### 5. 部署和运维设计

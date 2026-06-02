@@ -360,6 +360,7 @@ def main():
     print("Test 1: Ping Communication")
     print("-"*80)
     
+    # =============================================================
     ping_response = process.send_request("ping", {})
     
     if ping_response and ping_response.get("success"):
@@ -381,12 +382,11 @@ def main():
     
     print("Deleting old index files...")
     
+    # =============================================================
     delete_params = {
         "action": "delete"
     }
-    
     delete_response = process.send_request("index_init", delete_params)
-    
     if delete_response and delete_response.get("success"):
         deleted_files = delete_response.get("data", {}).get("deleted_files", [])
         print(f"✓ Old index deleted: {len(deleted_files)} files removed")
@@ -394,17 +394,13 @@ def main():
         print("✗ Old index deletion failed (or no old index exists)")
     
     image_records, record_id_to_path = generate_image_records(image_files, start_id=1001)
-    
     print(f"Initializing index with {len(image_records)} images...")
-    
     index_init_params = {
         "action": "init",
         "rebuild": True,
         "image_records": image_records
     }
-    
     index_init_response = process.send_request("index_init", index_init_params, timeout=300.0)
-    
     if index_init_response and index_init_response.get("success"):
         index_init_data = index_init_response.get("data", {})
         
@@ -439,12 +435,10 @@ def main():
             "top_k": args.top_k,
             "filters": {}
         }
-        
         print(f"Query: \"{args.search_query}\"")
         print(f"Searching in indexed images...")
         
         search_response = process.send_request("search", search_params, timeout=30.0)
-        
         if search_response and search_response.get("success"):
             search_data = search_response.get("data", {})
             results = search_data.get("results", [])
@@ -495,13 +489,11 @@ def main():
     if image_files:
         test_image = image_files[0]
         print(f"Testing image: {Path(test_image).name}")
-        
         tag_params = {
             "action": "generate_tags",
             "image_path": test_image,
             "tag_level": "all"
         }
-        
         tag_response = process.send_request("tag_detect", tag_params)
         print(f"tag_detect resp data {tag_response}")
         if tag_response and tag_response.get("success"):

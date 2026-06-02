@@ -5,45 +5,261 @@ This engine provides:
 1. Index initialization from existing images
 2. Index rebuilding
 3. Batch feature extraction
+4. Progress file management (start/stop/continue)
 """
 
 import os
 import sys
 import json
 import time
+import threading
 import numpy as np
 from pathlib import Path
-from typing import List, Dict
+from datetime import datetime
+from typing import List, Dict, Optional
 
 from engines.base import BaseEngine
 from engines.clip_encoder import CLIPEncoder
 from engines.faiss_index_manager import FAISSIndexManager
+from engines.progress_manager import ProgressManager
 
 
 class IndexInitEngine(BaseEngine):
     def __init__(self):
         self.clip_encoder = CLIPEncoder()
         self.index_manager = FAISSIndexManager()
+        self.progress_manager = ProgressManager()
         
-        print(f"IndexInitEngine initialized:", file=sys.stderr)
+        self.is_building = False
+        self.stop_flag = False
+        self.build_thread = None
+        
+        print(f"IndexInitEngine initialized", file=sys.stderr)
     
     def process(self, params: dict) -> dict:
-        action = params.get("action", "init")
+        operation = params.get("operation", "")
         
-        if action == "init":
+        if operation == "start":
+            rebuild = params.get("rebuild", False)
+            return self._start_build(rebuild)
+        
+        elif operation == "stop":
+            return self._stop_build()
+        
+        elif operation == "continue":
+            return self._continue_build()
+        
+        elif operation == "get_progress":
+            return self._get_progress()
+        
+        elif operation == "init":
             return self._init_index(params)
         
-        elif action == "rebuild":
+        elif operation == "rebuild":
             return self._rebuild_index(params)
         
-        elif action == "delete":
+        elif operation == "delete":
             return self._delete_index(params)
         
-        elif action == "get_status":
+        elif operation == "get_status":
             return self._get_status()
         
         else:
-            raise ValueError(f"Unknown action: {action}")
+            raise ValueError(f"Unknown operation: {operation}")
+    
+    def _start_build(self, rebuild: bool) -> dict:
+        print(f"Starting index build (rebuild={rebuild})", file=sys.stderr)
+        
+        if rebuild:
+            print(f"Deleting existing index...", file=sys.stderr)
+            self.index_manager.delete_index()
+            self.progress_manager.reset_progress_file(self.progress_manager.load_progress())
+        
+        try:
+            progress_data = self.progress_manager.load_progress()
+        except FileNotFoundError:
+            return {
+                "success": False,
+                "error": "Progress file not found. Please create progress file first.",
+                "hint": "Go should create progress file: ai-engine/src/config/process_file.json"
+            }
+        
+        summary = self.progress_manager.get_progress_summary(progress_data)
+        
+        if summary["status"] == "completed":
+            return {
+                "success": True,
+                "operation": "start",
+                "status": "completed",
+                "message": "Index already completed, no need to start"
+            }
+        
+        self.is_building = True
+        self.stop_flag = False
+        
+        self.build_thread = threading.Thread(
+            target=self._process_files_async,
+            args=(progress_data,)
+        )
+        self.build_thread.start()
+        
+        return {
+            "success": True,
+            "operation": "start",
+            "total_files": summary["total_files"],
+            "processed_files": summary["processed_files"],
+            "status": "processing",
+            "message": "Index build started"
+        }
+    
+    def _stop_build(self) -> dict:
+        print(f"Stopping index build...", file=sys.stderr)
+        
+        self.stop_flag = True
+        self.is_building = False
+        
+        if self.build_thread and self.build_thread.is_alive():
+            self.build_thread.join(timeout=5.0)
+        
+        progress_data = self.progress_manager.load_progress()
+        self.progress_manager.update_progress_stats(progress_data)
+        self.progress_manager.save_progress(progress_data)
+        self.index_manager.save_index()
+        
+        summary = self.progress_manager.get_progress_summary(progress_data)
+        
+        return {
+            "success": True,
+            "operation": "stop",
+            "total_files": summary["total_files"],
+            "processed_files": summary["processed_files"],
+            "status": "stopped",
+            "message": "Index build stopped, progress saved"
+        }
+    
+    def _continue_build(self) -> dict:
+        print(f"Continuing index build...", file=sys.stderr)
+        
+        try:
+            progress_data = self.progress_manager.load_progress()
+        except FileNotFoundError:
+            return {
+                "success": False,
+                "error": "Progress file not found. Cannot continue build.",
+                "hint": "Go should create progress file first"
+            }
+        
+        summary = self.progress_manager.get_progress_summary(progress_data)
+        
+        if summary["status"] == "completed":
+            return {
+                "success": True,
+                "operation": "continue",
+                "status": "completed",
+                "message": "Index already completed"
+            }
+        
+        self.is_building = True
+        self.stop_flag = False
+        
+        self.build_thread = threading.Thread(
+            target=self._process_files_async,
+            args=(progress_data,)
+        )
+        self.build_thread.start()
+        
+        return {
+            "success": True,
+            "operation": "continue",
+            "total_files": summary["total_files"],
+            "processed_files": summary["processed_files"],
+            "status": "processing",
+            "message": "Index build continued"
+        }
+    
+    def _get_progress(self) -> dict:
+        try:
+            progress_data = self.progress_manager.load_progress()
+            summary = self.progress_manager.get_progress_summary(progress_data)
+            
+            if self.is_building:
+                summary["status"] = "processing"
+            
+            return {
+                "success": True,
+                "operation": "get_progress",
+                "data": summary
+            }
+        
+        except FileNotFoundError:
+            return {
+                "success": False,
+                "error": "Progress file not found"
+            }
+    
+    def _process_files_async(self, progress_data: dict):
+        batch_size = progress_data.get("batch", 10)
+        files = progress_data.get("files", [])
+        
+        processed_count = 0
+        start_time = time.time()
+        
+        print(f"Processing files (batch_size={batch_size})", file=sys.stderr)
+        
+        for file_record in files:
+            if self.stop_flag:
+                print(f"Stop flag detected, stopping processing", file=sys.stderr)
+                self.progress_manager.update_progress_stats(progress_data)
+                self.progress_manager.save_progress(progress_data)
+                self.index_manager.save_index()
+                break
+            
+            if file_record.get("status") != "idle":
+                continue
+            
+            record_id = file_record.get("record_id")
+            image_path = file_record.get("image_path")
+            image_hash = file_record.get("image_hash", "")
+            
+            print(f"Processing file {record_id}: {image_path}", file=sys.stderr)
+            
+            file_record["status"] = "processing"
+            
+            try:
+                features = self.clip_encoder.encode_image(image_path)
+                features = features.flatten()
+                
+                self.index_manager.add_vector(features, record_id, image_hash)
+                
+                file_record["status"] = "completed"
+                processed_count += 1
+                
+                print(f"File {record_id} processed successfully", file=sys.stderr)
+                
+            except Exception as e:
+                file_record["status"] = "failed"
+                print(f"Failed to process {image_path}: {e}", file=sys.stderr)
+            
+            if processed_count % batch_size == 0:
+                self.progress_manager.update_progress_stats(progress_data)
+                self.progress_manager.save_progress(progress_data)
+                self.index_manager.save_index()
+                
+                elapsed_time = time.time() - start_time
+                avg_time_per_file = elapsed_time / processed_count
+                remaining_files = progress_data.get("total_files", 0) - processed_count
+                estimated_time = remaining_files * avg_time_per_file
+                
+                print(f"Progress: {processed_count}/{progress_data.get('total_files', 0)} files, elapsed={elapsed_time:.1f}s, estimated={estimated_time:.1f}s", file=sys.stderr)
+        
+        if not self.stop_flag:
+            self.progress_manager.update_progress_stats(progress_data)
+            self.progress_manager.save_progress(progress_data)
+            self.index_manager.save_index()
+            self.is_building = False
+            
+            elapsed_time = time.time() - start_time
+            print(f"Index build completed: {processed_count} files in {elapsed_time:.1f}s", file=sys.stderr)
     
     def _init_index(self, params: dict) -> dict:
         rebuild = params.get("rebuild", False)

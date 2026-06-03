@@ -55,3 +55,4 @@ tmp/test.log
 src/config/process_file.json
 tests/test.log
 test.log
+src/models-bck/*

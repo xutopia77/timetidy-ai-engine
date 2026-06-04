@@ -67,7 +67,7 @@ class SyncEngine(BaseEngine):
         """
         print(f"Starting sync_all operation...", file=sys.stderr)
         
-        progress_file_path = params.get("progress_file", "config/process_file.json")
+        progress_file_path = params.get("progress_file", "data/progress/process_file.json")
         progress_file = Path(progress_file_path)
         
         if not progress_file.exists():

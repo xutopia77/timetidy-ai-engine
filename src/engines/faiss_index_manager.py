@@ -21,7 +21,8 @@ import faiss
 class FAISSIndexManager:
     def __init__(self, index_dir: str = None, feature_dim: int = 1024):
         if index_dir is None:
-            project_root = Path(__file__).parent.parent
+            # project_root is ai-engine directory (parent of src)
+            project_root = Path(__file__).parent.parent.parent
             index_dir = str(project_root / "data" / "index")
         
         self.index_dir = Path(index_dir)

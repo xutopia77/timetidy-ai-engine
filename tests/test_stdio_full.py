@@ -618,9 +618,9 @@ def main():
     # test index init =========================================================== 
     print("Step 1: Simulate Go creating process_file.json...")
     
-    config_dir = project_root / "src" / "config"
-    config_dir.mkdir(exist_ok=True)
-    process_file_path = config_dir / "process_file.json"
+    progress_dir = project_root / "data" / "progress"
+    progress_dir.mkdir(parents=True, exist_ok=True)
+    process_file_path = progress_dir / "process_file.json"
     
     process_file_data, record_id_to_path = create_process_file(
         image_files,

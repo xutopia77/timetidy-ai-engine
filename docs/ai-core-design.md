@@ -1609,7 +1609,7 @@ func (p *PythonProcess) readStderr(stderr io.Reader) {
     for scanner.Scan() {
         line := scanner.Text()
         if line != "" {
-            log.Infof("AI engine stderr: %s", line)
+            log.Infof("ai-log: %s", line)
         }
     }
 }

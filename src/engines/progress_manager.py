@@ -51,7 +51,7 @@ class ProgressManager:
         if progress_file_path is None:
             # project_root is ai-engine directory (parent of src)
             project_root = Path(__file__).parent.parent.parent
-            self.progress_file = project_root / "data" / "progress" / "process_file.json"
+            self.progress_file = project_root / "ai-data" / "progress" / "process_file.json"
         else:
             self.progress_file = Path(progress_file_path)
         

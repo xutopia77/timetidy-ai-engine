@@ -69,11 +69,11 @@ class HierarchicalTagEngine(BaseEngine):
             self._parse_config()
             
             print(
-                f"Loaded hierarchical tag config:\n"
-                f"  - Level1 categories: {len(self._level1_categories)}\n"
-                f"  - Level2 categories: {sum(len(v) for v in self._level2_categories.values())}\n"
-                f"  - Attribute categories: {sum(len(v) for v in self._attribute_categories.values())}\n"
-                f"  - Config path: {self._config_path}",
+                f"Loaded hierarchical tag config: "
+                f"Level1 categories: {len(self._level1_categories)},"
+                f"Level2 categories: {sum(len(v) for v in self._level2_categories.values())},"
+                f"Attribute categories: {sum(len(v) for v in self._attribute_categories.values())},"
+                f"Config path: {self._config_path}",
                 file=sys.stderr
             )
     

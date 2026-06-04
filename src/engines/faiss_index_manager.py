@@ -23,7 +23,7 @@ class FAISSIndexManager:
         if index_dir is None:
             # project_root is ai-engine directory (parent of src)
             project_root = Path(__file__).parent.parent.parent
-            index_dir = str(project_root / "data" / "index")
+            index_dir = str(project_root / "ai-data" / "index")
         
         self.index_dir = Path(index_dir)
         self.index_dir.mkdir(parents=True, exist_ok=True)
@@ -62,9 +62,10 @@ class FAISSIndexManager:
             quantizer = faiss.IndexFlatIP(self.feature_dim)
             index_ivf = faiss.IndexIVFFlat(quantizer, self.feature_dim, self.nlist, faiss.METRIC_INNER_PRODUCT)
             
-            # Enable direct map for ID-based operations
+            # Enable direct_map with Hashtable for ID-based operations
+            # Hashtable supports remove operations with IDSelectorArray
             index_ivf.direct_map = faiss.DirectMap()
-            index_ivf.direct_map.type = faiss.DirectMap.Array
+            index_ivf.direct_map.type = faiss.DirectMap.Hashtable
             
             # Use more training points: at least 39 * nlist as recommended by FAISS
             n_train = max(self.nlist * 40, 1000)  # At least 1000 training points
@@ -72,8 +73,8 @@ class FAISSIndexManager:
             print(f"Training index with {n_train} dummy vectors...", file=sys.stderr)
             index_ivf.train(dummy_features)
             
-            print(f"Creating IndexIDMap2 wrapper...", file=sys.stderr)
-            self.index = faiss.IndexIDMap2(index_ivf)
+            # Use IndexIVFFlat directly (not IndexIDMap2) for better remove/add support
+            self.index = index_ivf
             
             self.metadata = {}
             
@@ -104,9 +105,7 @@ class FAISSIndexManager:
             with open(self.metadata_file, "r", encoding="utf-8") as f:
                 self.metadata = json.load(f)
             
-            print(f"Index loaded successfully:", file=sys.stderr)
-            print(f"  - Total vectors: {self.index.ntotal}", file=sys.stderr)
-            print(f"  - Metadata entries: {len(self.metadata)}", file=sys.stderr)
+            print(f"Index loaded successfully:Total vectors: {self.index.ntotal}, Metadata entries: {len(self.metadata)}", file=sys.stderr)
             
             return True
             
@@ -163,9 +162,7 @@ class FAISSIndexManager:
             
             self.save_index()
             
-            print(f"Index built successfully:", file=sys.stderr)
-            print(f"  - Total vectors: {self.index.ntotal}", file=sys.stderr)
-            print(f"  - Metadata entries: {len(self.metadata)}", file=sys.stderr)
+            print(f"Index built successfully:Total vectors: {self.index.ntotal}, Metadata entries: {len(self.metadata)}", file=sys.stderr)
             
             return True
             
@@ -287,8 +284,10 @@ class FAISSIndexManager:
             raise RuntimeError("Index not loaded")
         
         try:
+            # Use IDSelectorArray for DirectMap.Hashtable
             ids_to_remove = np.array([record_id], dtype=np.int64)
-            self.index.remove_ids(ids_to_remove)
+            selector = faiss.IDSelectorArray(ids_to_remove)
+            self.index.remove_ids(selector)
             
             if str(record_id) in self.metadata:
                 self.metadata[str(record_id)]["deleted"] = True

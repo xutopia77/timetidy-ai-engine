@@ -67,10 +67,10 @@ class CLIPEncoder:
         )
         
         print(
-            f"CLIP models loaded:\n"
-            f"  - Vision encoder ready\n"
-            f"  - Text encoder ready\n"
-            f"  - Feature dim: {config.get_feature_dim()}",
+            f"CLIP models loaded: "
+            f"Vision encoder ready,"
+            f"Text encoder ready,"
+            f"Feature dim: {config.get_feature_dim()}",
             file=sys.stderr,
         )
     

@@ -618,7 +618,7 @@ def main():
     # test index init =========================================================== 
     print("Step 1: Simulate Go creating process_file.json...")
     
-    progress_dir = project_root / "data" / "progress"
+    progress_dir = project_root / "ai-data" / "progress"
     progress_dir.mkdir(parents=True, exist_ok=True)
     process_file_path = progress_dir / "process_file.json"
     
@@ -680,11 +680,11 @@ def main():
                         "data": {
                             "total_images": total,
                             "processed_files": processed,
-                            "skipped_files": skipped,
+                            "skipped_files": progress_data.get("skipped_files", 0),
                             "failed_files": progress_data.get("failed_files", 0),
                             "build_time_seconds": round(time.time() - start_time, 2),
-                            "index_file": str(project_root / "src" / "data" / "index" / "faiss_index.bin"),
-                            "metadata_file": str(project_root / "src" / "data" / "index" / "ai_metadata.json")
+                            "index_file": str(project_root / "ai-data" / "index" / "faiss_index.bin"),
+                            "metadata_file": str(project_root / "ai-data" / "index" / "ai_metadata.json")
                         },
                         "record_id_to_path": record_id_to_path
                     }

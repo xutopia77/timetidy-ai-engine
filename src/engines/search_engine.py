@@ -32,9 +32,9 @@ class SearchEngine(BaseEngine):
         self._vision_model_path = os.path.join(MODEL_DIR, model_filenames["vision"])
         self._text_model_path = os.path.join(MODEL_DIR, model_filenames["text"])
         
-        print(f"Using model: {config.CLIP_MODEL_NAME}")
-        print(f"Vision model: {model_filenames['vision']}")
-        print(f"Text model: {model_filenames['text']}")
+        print(f"Using model: {config.CLIP_MODEL_NAME}", file=sys.stderr)
+        print(f"Vision model: {model_filenames['vision']}", file=sys.stderr)
+        print(f"Text model: {model_filenames['text']}", file=sys.stderr)
 
     def _ensure_model(self):
         if self._vision_session is not None:

@@ -155,7 +155,7 @@ class SearchEngine(BaseEngine):
     def process(self, params: dict) -> dict:
         self._ensure_model()
 
-        action = params.get("action", "encode_image")
+        action = params.get("action", "")
         
         if action == "encode_image":
             file_path = params.get("file_path", "")

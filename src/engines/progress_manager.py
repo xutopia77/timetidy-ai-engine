@@ -47,8 +47,18 @@ from typing import List, Dict, Optional
 
 
 class ProgressManager:
-    def __init__(self, progress_file_path: str = "src/config/process_file.json"):
-        self.progress_file = Path(progress_file_path)
+    def __init__(self, progress_file_path: str = None):
+        if progress_file_path is None:
+            # Auto-detect project root based on file location
+            project_root = Path(__file__).parent.parent
+            # Check if src directory exists (ai-engine structure)
+            if (project_root / "src").exists():
+                self.progress_file = project_root / "src" / "config" / "process_file.json"
+            else:
+                # Direct structure (time-tidy/appData/ai_engine)
+                self.progress_file = project_root / "config" / "process_file.json"
+        else:
+            self.progress_file = Path(progress_file_path)
         
         print(f"ProgressManager initialized with file: {self.progress_file}", file=sys.stderr)
     

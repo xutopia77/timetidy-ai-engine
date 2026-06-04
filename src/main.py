@@ -35,6 +35,7 @@ class AIEngine:
         print(f"AI Engine initialized successfully Available actions: {list(self.engines.keys())}", file=sys.stderr)
 
     def handle_request(self, request: dict) -> dict:
+        print(f"request-data: {request}", file=sys.stderr)
         action = request.get("action", "")
         engine = self.engines.get(action)
 

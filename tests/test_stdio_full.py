@@ -595,7 +595,7 @@ def main():
     print("\n" + "-"*80)
     print("Test 1: Ping Communication")
     print("-"*80)
-    
+    # test ping =========================================================== 
     ping_response = process.send_request("ping", {})
     
     if ping_response and ping_response.get("success"):
@@ -614,7 +614,8 @@ def main():
     print("\n" + "-"*80)
     print("Test 2: Index Initialization (File Hash Based)")
     print("-"*80)
-    
+
+    # test index init =========================================================== 
     print("Step 1: Simulate Go creating process_file.json...")
     
     config_dir = project_root / "src" / "config"
@@ -715,16 +716,23 @@ def main():
     print("-"*80)
     
     if test_results.get("index_init", {}).get("success"):
+        # search_params = {
+        #     "action": "search",
+        #     "query": args.search_query,
+        #     "top_k": args.top_k,
+        #     "filters": {}
+        # }
+        
         search_params = {
             "action": "search",
             "query": args.search_query,
-            "top_k": args.top_k,
-            "filters": {}
+            "top_k": 20
         }
-        
+
         print(f"Query: \"{args.search_query}\"")
         print(f"Searching in indexed images...")
         
+        # test search =========================================================== 
         search_response = process.send_request("search", search_params, timeout=30.0)
         
         if search_response and search_response.get("success"):
@@ -774,6 +782,7 @@ def main():
     print("Test 4: Tag Detection")
     print("-"*80)
     
+    # test tag detect =========================================================== 
     if image_files:
         test_image = image_files[0]
         print(f"Testing image: {Path(test_image).name}")
@@ -906,7 +915,7 @@ def main():
     
     if test_results.get("index_init", {}).get("success"):
         print("Step 1: Find similar images by record_id...")
-        
+        # test find similar =========================================================== 
         find_similar_params = {
             "action": "find_similar",
             "record_id": 1001,
@@ -952,7 +961,7 @@ def main():
             }
         
         print("\nStep 2: Find similar images by image path...")
-        
+        # test find similar by image =========================================================== 
         if image_files:
             test_image = image_files[0]
             
@@ -1022,7 +1031,7 @@ def main():
     
     if test_results.get("index_init", {}).get("success"):
         print("Step 1: Detect similar groups across all images...")
-        
+        # test detect similar groups =========================================================== 
         detect_groups_params = {
             "action": "detect_similar_groups",
             "min_similarity": 0.85,

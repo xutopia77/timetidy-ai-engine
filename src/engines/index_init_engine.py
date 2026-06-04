@@ -89,7 +89,7 @@ class IndexInitEngine(BaseEngine):
         except FileNotFoundError:
             raise FileNotFoundError(
                 "Progress file not found. Please create progress file first.\n"
-                "Go should create progress file: ai-engine/src/config/process_file.json"
+                f"Expected location: {self.progress_manager.progress_file}"
             )
         
         if rebuild:

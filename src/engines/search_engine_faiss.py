@@ -55,22 +55,22 @@ class SearchEngine(BaseEngine):
         return self.clip_encoder.encode_text(text)
     
     def process(self, params: dict) -> dict:
-        action = params.get("action", "search")
+        cmd = params.get("cmd", "")
         
-        if action == "search":
+        if cmd == "search":
             return self._search_by_text(params)
         
-        elif action == "encode_image":
+        elif cmd == "encode_image":
             return self._encode_image(params)
         
-        elif action == "encode_text":
+        elif cmd == "encode_text":
             return self._encode_text(params)
         
-        elif action == "get_status":
+        elif cmd == "get_status":
             return self._get_status()
         
         else:
-            raise ValueError(f"Unknown action: {action}")
+            raise ValueError(f"Unknown cmd: {cmd}")
     
     def _search_by_text(self, params: dict) -> dict:
         self._ensure_index_loaded()

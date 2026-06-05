@@ -129,13 +129,34 @@
 响应格式：
 {
   "id": "1234567890",        // 请求ID（与请求匹配）
-  "code": 0,           // 0 成功，1 失败， 其他状态根据action不同可以自由扩展
-  "status": "",                // 状态，成功时是success，错误时是错误原因
-  "data": {                  // 结果数据
-    "results": [...]      // 每一个请求都有自己的数据结果
+  "code": 0,                 // 0 成功，1 失败，其他状态根据action不同可以自由扩展
+  "status": "success",       // 状态，成功时是success，错误时是错误原因
+  "data": {                  // Go需要的核心数据（简洁易解析）
+    "results": [...]         // 每一个请求都有自己的数据结果
+  },
+  "data_dbg": {             // 辅助调试数据（可选，不影响Go处理）
+    "query_time_ms": 3.5,    // 调试信息，如处理时间
+    "results": [...]        // 其他调试信息
   }
 }
 ```
+
+**响应格式设计说明：**
+
+- `data`: Go需要的核心数据，简洁易解析
+  - 只包含Go业务逻辑需要的数据
+  - 结构简单，减少解析复杂度
+  - 示例：搜索结果、标签列表、描述文本等
+
+- `data_dbg`: 辅助调试数据，可选字段
+  - 包含调试信息，不影响Go业务逻辑
+  - 记录详细处理过程，方便问题排查
+  - 示例：处理时间、中间结果、详细日志等
+
+**优势：**
+- Go解析简单：只需解析`data`字段
+- 调试信息完整：`data_dbg`保留所有调试信息
+- 向后兼容：`data_dbg`可选，不影响现有逻辑
 
 **支持的action列表：**
 
@@ -283,13 +304,13 @@ SearchEngine 提供两种搜索模式：
      "code": 0,
      "status": "success",
      "data": {
-       "query": "风景照片",
        "results": [
          {"record_id": 1001, "similarity": 0.95, "rank": 1},
          {"record_id": 1002, "similarity": 0.89, "rank": 2}
-       ],
-       "query_time_ms": 3.5,
-       "total_count": 2
+       ]
+     },
+     "data_dbg": {
+       "query_time_ms": 3.5
      }
    }
 
@@ -317,13 +338,13 @@ SearchEngine 提供两种搜索模式：
      "code": 0,
      "status": "success",
      "data": {
-       "reference_id": 1001,
        "similar_images": [
          {"record_id": 1005, "similarity": 0.95, "rank": 1},
          {"record_id": 1020, "similarity": 0.89, "rank": 2}
-       ],
-       "query_time_ms": 3.2,
-       "total_count": 2
+       ]
+     },
+     "data_dbg": {
+       "query_time_ms": 3.2
      }
    }
 ```
@@ -456,8 +477,15 @@ Python处理流程：
      "code": 0,
      "status": "success",
      "data": {
-       "record_id": 1001,
-       "file_path": "/path/to/image.jpg",
+       "tags": [
+         {"label": "旅游出行", "confidence": 0.92},
+         {"label": "景点打卡", "confidence": 0.88},
+         {"label": "白天", "confidence": 0.90},
+         {"label": "晴天", "confidence": 0.85},
+         {"label": "夏季", "confidence": 0.78}
+       ]
+     },
+     "data_dbg": {
        "primary_category": {
          "id": "travel",
          "name": "旅游出行",
@@ -476,17 +504,10 @@ Python处理流程：
          {"id": "daytime", "name": "白天", "confidence": 0.90, "level": "attribute", "type": "time"},
          {"id": "sunny", "name": "晴天", "confidence": 0.85, "level": "attribute", "type": "weather"},
          {"id": "summer", "name": "夏季", "confidence": 0.78, "level": "attribute", "type": "season"}
-       ],
-       "all_tags": [
-         {"id": "travel", "name": "旅游出行", "confidence": 0.92, "level": 1},
-         {"id": "scenic_spot", "name": "景点打卡", "confidence": 0.88, "level": 2},
-         {"id": "daytime", "name": "白天", "confidence": 0.90, "level": "attribute"}
-         // ... 所有标签按置信度排序
-       ],
+       ]
        "process_time_ms": 50
      }
    }
-
 其他接口：
 - classify_hierarchical: 分层分类（与generate_tags类似）
 ```
@@ -625,13 +646,13 @@ find_similar接口：
      "code": 0,
      "status": "success",
      "data": {
-       "reference_id": 1001,
        "similar_images": [
          {"record_id": 1005, "similarity": 0.95, "rank": 1},
          {"record_id": 1020, "similarity": 0.89, "rank": 2}
-       ],
-       "query_time_ms": 3.2,
-       "total_count": 2
+       ]
+     },
+     "data_dbg": {
+       "query_time_ms": 3.2
      }
    }
 
@@ -654,13 +675,13 @@ find_similar_by_image接口：
      "code": 0,
      "status": "success",
      "data": {
-       "file_path": "/path/to/image.jpg",
        "similar_images": [
          {"record_id": 1005, "similarity": 0.95, "rank": 1},
          {"record_id": 1020, "similarity": 0.89, "rank": 2}
-       ],
-       "query_time_ms": 50.5,
-       "total_count": 2
+       ]
+     },
+     "data_dbg": {
+       "query_time_ms": 50.5
      }
    }
 
@@ -692,9 +713,10 @@ batch_find_similar接口：
            "reference_id": 1002,
            "similar_images": [...]
          }
-       ],
-       "total_time_ms": 10.5,
-       "batch_size": 3
+       ]
+     },
+     "data_dbg": {
+       "total_time_ms": 10.5
      }
    }
 
@@ -727,8 +749,9 @@ detect_similar_groups接口：
            "members": [1002, 1008],
            "avg_similarity": 0.92
          }
-       ],
-       "total_groups": 2,
+       ]
+     },
+     "data_dbg": {
        "total_time_ms": 2500.5
      }
    }
@@ -803,12 +826,21 @@ Python处理流程：
      "code": 0,
      "status": "success",
      "data": {
-       "record_id": 1001,
-       "description": "这是一张风景照片，包含山脉和日落景象，天空呈现橙红色",
+       "description": "这是一张风景照片，包含山脉和日落景象，天空呈现橙红色"
+     },
+     "data_dbg": {
        "tags_used": ["山", "日落", "风景", "橙红色"],
        "process_time_ms": 80
      }
    }
+
+设计说明：
+- data: Go需要的核心数据
+  - description: 图片描述文本
+- data_dbg: 辅助调试数据
+  - record_id: 记录ID
+  - tags_used: 使用的标签列表
+  - process_time_ms: 处理时间
 ```
 
 #### 2.4 图片相似度计算功能（SimilarityEngine）
@@ -895,7 +927,6 @@ Python处理流程：
      "code": 0,
      "status": "success",
      "data": {
-       "reference_id": 1001,
        "similar_images": [
          {
            "record_id": 1005,
@@ -907,8 +938,10 @@ Python处理流程：
            "similarity": 0.89,
            "rank": 2
          }
-       ],
-       "query_time_ms": 3.2
+       ]
+     },
+     "data_dbg": {
+       "process_time_ms": 80
      }
    }
 ```
@@ -984,9 +1017,6 @@ Python处理流程：
      "code": 0,
      "status": "success",
      "data": {
-       "total_images": 10000,
-       "total_groups": 15,
-       "total_similar_pairs": 42,
        "groups": [
          {
            "group_id": 1,
@@ -995,8 +1025,7 @@ Python处理流程：
              {"record_id": 1005, "similarity_to_representative": 0.95},
              {"record_id": 1020, "similarity_to_representative": 0.91}
            ],
-           "avg_similarity": 0.93,
-           "pair_count": 3
+           "avg_similarity": 0.93
          },
          {
            "group_id": 2,
@@ -1004,23 +1033,15 @@ Python处理流程：
              {"record_id": 2001, "representative": true},
              {"record_id": 2003, "similarity_to_representative": 0.92}
            ],
-           "avg_similarity": 0.92,
-           "pair_count": 1
+           "avg_similarity": 0.92
          }
-       ],
+       ]
+     },
+     "data_dbg": {
        "query_time_ms": 2100
      }
    }
 
-结果说明：
-- total_images: 参与检测的图片总数
-- total_groups: 相似图片组数量
-- total_similar_pairs: 相似图片对数量
-- groups: 相似图片组列表
-  - group_id: 组ID
-  - images: 组内图片列表（第一张为代表性图片）
-  - avg_similarity: 组内平均相似度
-  - pair_count: 组内相似图片对数量
 ```
 
 **并查集（Union-Find）算法：**
@@ -1151,12 +1172,13 @@ IndexInitEngine接口：
      "code": 0,
      "status": "success",
      "data": {
-       "operation": "start",
        "total_files": 10000,
-       "processed_files": 50,  // 只处理了50个file_hash变化的文件
-       "skipped_files": 9950,  // 跳过了9950个file_hash未变化的文件
-       "status": "completed",
-       "message": "Index sync completed"
+       "processed_files": 50,
+       "skipped_files": 9950,
+       "failed_files": 0
+     },
+     "data_dbg": {
+       "query_time_ms": 2100
      }
    }
 
@@ -1179,7 +1201,9 @@ SyncEngine接口：
        "total_files": 10000,
        "processed_files": 50,
        "skipped_files": 9950,
-       "failed_files": 0,
+       "failed_files": 0
+     },
+     "data_dbg": {
        "process_time_ms": 1234.56
      }
    }
@@ -1451,14 +1475,7 @@ Python处理流程：
    {
      "id": "1234567890",
      "code": 0,
-     "status": "success",
-     "data": {
-       "operation": "start",
-       "total_files": 10000,
-       "processed_files": 0,
-       "status": "processing",
-       "message": "Index build started"
-     }
+     "status": "success"
    }
 ```
 
@@ -1528,12 +1545,7 @@ Python处理流程：
    {
      "id": "1234567890",
      "code": 0,
-     "status": "success",
-     "data": {
-       "operation": "start",
-       "rebuild": true,
-       "message": "Index rebuild started"
-     }
+     "status": "success"
    }
 
 重建流程：

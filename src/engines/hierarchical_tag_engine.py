@@ -444,9 +444,9 @@ class HierarchicalTagEngine(BaseEngine):
     def process(self, params: dict) -> dict:
         self._ensure_model()
         
-        action = params.get("action", "generate_tags")
+        cmd = params.get("cmd", "generate_tags")
         
-        if action == "generate_tags":
+        if cmd == "generate_tags":
             file_path = params.get("file_path", "")
             record_id = params.get("record_id", None)
             tag_level = params.get("tag_level", "all")
@@ -456,7 +456,7 @@ class HierarchicalTagEngine(BaseEngine):
             
             return self.generate_tags(file_path, record_id, tag_level)
         
-        elif action == "classify_hierarchical":
+        elif cmd == "classify_hierarchical":
             file_path = params.get("file_path", "")
             
             if not file_path:
@@ -464,7 +464,7 @@ class HierarchicalTagEngine(BaseEngine):
             
             return self.classify_hierarchical(file_path)
         
-        elif action == "get_config":
+        elif cmd == "get_config":
             return {
                 "config_path": str(self._config_path),
                 "level1_categories": [{"id": c.id, "name": c.name} for c in self._level1_categories],
@@ -479,7 +479,7 @@ class HierarchicalTagEngine(BaseEngine):
                 "settings": self._config.get("settings", {}),
             }
         
-        elif action == "get_available_tags":
+        elif cmd == "get_available_tags":
             return {
                 "level1_tags": [{"id": c.id, "name": c.name} for c in self._level1_categories],
                 "level2_tags": {
@@ -492,7 +492,7 @@ class HierarchicalTagEngine(BaseEngine):
                 },
             }
         
-        elif action == "reload_config":
+        elif cmd == "reload_config":
             self._config = None
             self._level1_vectors = None
             self._load_config()
@@ -503,4 +503,4 @@ class HierarchicalTagEngine(BaseEngine):
             }
         
         else:
-            raise ValueError(f"Unknown action: {action}")
+            raise ValueError(f"Unknown cmd: {cmd}")

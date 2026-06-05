@@ -42,25 +42,36 @@ class AIEngine:
         if engine is None:
             return {
                 "id": request.get("id", ""),
-                "success": False,
-                "error": f"Unknown action: {action}",
+                "code": 1,
+                "status": f"Unknown action: {action}",
             }
 
         try:
-            result = engine.process(request.get("params", {}))
+            result = engine.process(request.get("data", {}))
+            
+            # Extract data and data_dbg from result
+            data = result.get("data", result)
+            data_dbg = result.get("data_dbg", {})
+            
             respDat = {
                 "id": request.get("id", ""),
-                "success": True,
-                "data": result,
+                "code": 0,
+                "status": "success",
+                "data": data,
             }
+            
+            # Add data_dbg if present
+            if data_dbg:
+                respDat["data_dbg"] = data_dbg
+            
             print(f"response-data: {respDat}", file=sys.stderr)
             return respDat
         except Exception as e:
             traceback.print_exc()
             return {
                 "id": request.get("id", ""),
-                "success": False,
-                "error": str(e),
+                "code": 1,
+                "status": str(e),
             }
 
 
@@ -88,8 +99,8 @@ def main():
         except json.JSONDecodeError as e:
             error_resp = {
                 "id": "",
-                "success": False,
-                "error": f"Invalid JSON: {e}",
+                "code": 1,
+                "status": f"Invalid JSON: {e}",
             }
             sys.stdout.write(json.dumps(error_resp) + "\n")
             sys.stdout.flush()
@@ -97,8 +108,8 @@ def main():
             traceback.print_exc()
             error_resp = {
                 "id": "",
-                "success": False,
-                "error": str(e),
+                "code": 1,
+                "status": str(e),
             }
             sys.stdout.write(json.dumps(error_resp) + "\n")
             sys.stdout.flush()

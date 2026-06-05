@@ -82,9 +82,9 @@ class TagEngine(BaseEngine):
     def process(self, params: dict) -> dict:
         self._ensure_model()
         
-        action = params.get("action", "tag_image")
+        cmd = params.get("cmd", "")
         
-        if action == "tag_image":
+        if cmd == "tag_image":
             file_path = params.get("file_path", "")
             custom_tags = params.get("tags", None)
             top_k = params.get("top_k", 5)
@@ -116,13 +116,13 @@ class TagEngine(BaseEngine):
                 "total_tags": len(tags),
             }
         
-        elif action == "get_available_tags":
+        elif cmd == "get_available_tags":
             return {
                 "default_tags": self.DEFAULT_TAGS,
                 "count": len(self.DEFAULT_TAGS),
             }
         
-        elif action == "add_custom_tags":
+        elif cmd == "add_custom_tags":
             new_tags = params.get("tags", [])
             if not new_tags:
                 raise ValueError("tags is required")
@@ -135,4 +135,4 @@ class TagEngine(BaseEngine):
             }
         
         else:
-            raise ValueError(f"Unknown action: {action}")
+            raise ValueError(f"Unknown cmd: {cmd}")

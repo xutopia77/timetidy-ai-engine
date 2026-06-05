@@ -140,9 +140,8 @@ def generate_markdown_report(test_results: Dict, output_path: str, test_data_dir
     """Generate markdown test report"""
     lines = []
     
-    lines.append("# AI Engine stdio Communication Test Report (File Hash Based)")
+    lines.append("# AI Engine stdio Communication Test Report")
     lines.append("")
-    lines.append(f"**Generated**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     lines.append(f"**Test Data**: `{test_data_dir}`")
     lines.append("")
     
@@ -160,38 +159,38 @@ def generate_markdown_report(test_results: Dict, output_path: str, test_data_dir
     lines.append("| Test | Status | Details |")
     lines.append("|------|--------|---------|")
     
-    ping_status = "✓ Pass" if ping_result.get("success") else "✗ Fail"
+    ping_status = "✓ Pass" if ping_result.get("code") == 0 else "✗ Fail"
     lines.append(f"| Ping | {ping_status} | {ping_result.get('message', '')} |")
     
-    index_init_status = "✓ Pass" if index_init_result.get("success") else "✗ Fail"
+    index_init_status = "✓ Pass" if index_init_result.get("code") == 0 else "✗ Fail"
     total_images = index_init_result.get("data", {}).get("total_images", 0)
     build_time = index_init_result.get("data", {}).get("build_time_seconds", 0)
     processed = index_init_result.get("data", {}).get("processed_files", 0)
     skipped = index_init_result.get("data", {}).get("skipped_files", 0)
     lines.append(f"| Index Init | {index_init_status} | {processed} processed, {skipped} skipped, {total_images} total |")
     
-    search_status = "✓ Pass" if search_results.get("success") else "✗ Fail"
+    search_status = "✓ Pass" if search_results.get("code") == 0 else "✗ Fail"
     search_count = len(search_results.get("results", []))
     query_time = search_results.get("query_time_ms", 0)
     lines.append(f"| Search | {search_status} | {search_count} results in {query_time}ms |")
     
-    tag_status = "✓ Pass" if tag_results.get("success") else "✗ Fail"
+    tag_status = "✓ Pass" if tag_results.get("code") == 0 else "✗ Fail"
     all_tags = tag_results.get("all_tags", [])
     tag_count = len(all_tags)
     lines.append(f"| Tag Detect | {tag_status} | Generated {tag_count} tags |")
     
-    sync_status = "✓ Pass" if sync_result.get("success") else "✗ Fail"
+    sync_status = "✓ Pass" if sync_result.get("code") == 0 else "✗ Fail"
     processed_files = sync_result.get("data", {}).get("processed_files", 0)
     skipped_files = sync_result.get("data", {}).get("skipped_files", 0)
     total_files = sync_result.get("data", {}).get("total_files", 0)
     lines.append(f"| Sync All | {sync_status} | {processed_files} processed, {skipped_files} skipped, {total_files} total |")
     
-    find_similar_status = "✓ Pass" if find_similar_result.get("success") else "✗ Fail"
+    find_similar_status = "✓ Pass" if find_similar_result.get("code") == 0 else "✗ Fail"
     similar_count = len(find_similar_result.get("similar_images", []))
     similar_time = find_similar_result.get("query_time_ms", 0)
     lines.append(f"| Find Similar | {find_similar_status} | {similar_count} similar images in {similar_time}ms |")
     
-    detect_groups_status = "✓ Pass" if detect_groups_result.get("success") else "✗ Fail"
+    detect_groups_status = "✓ Pass" if detect_groups_result.get("code") == 0 else "✗ Fail"
     total_groups = detect_groups_result.get("total_groups", 0)
     total_pairs = detect_groups_result.get("total_similar_pairs", 0)
     detect_time = detect_groups_result.get("query_time_ms", 0)
@@ -199,7 +198,7 @@ def generate_markdown_report(test_results: Dict, output_path: str, test_data_dir
     
     lines.append("")
     
-    if index_init_result.get("success"):
+    if index_init_result.get("code") == 0:
         lines.append("## Index Initialization (File Hash Based)")
         lines.append("")
         
@@ -213,13 +212,13 @@ def generate_markdown_report(test_results: Dict, output_path: str, test_data_dir
         lines.append(f"- **Metadata file**: `{data.get('metadata_file', '')}`")
         lines.append("")
 
-    elif index_init_result.get("error"):
+    elif index_init_result.get("code", 1) != 0:
         lines.append("## Index Initialization")
         lines.append("")
-        lines.append(f"- **Error**: {index_init_result.get('error', 'Unknown error')}")
+        lines.append(f"- **Error**: {index_init_result.get('status', 'Unknown error')}")
         lines.append("")
     
-    if search_results.get("success") and search_results.get("results"):
+    if search_results.get("code") == 0 and search_results.get("results"):
         lines.append("## Search Results")
         lines.append("")
         
@@ -266,15 +265,11 @@ def generate_markdown_report(test_results: Dict, output_path: str, test_data_dir
                     lines.append("")
                     lines.append(f"![{image_name}]({rel_path})")
                     lines.append("")
-                    lines.append(f"*Path: `{rel_path}`*")
-                    lines.append("")
-                    lines.append("---")
-                    lines.append("")
         
         lines.append("---")
         lines.append("")
     
-    if tag_results.get("success"):
+    if tag_results.get("code") == 0:
         lines.append("## Tag Detection Results")
         lines.append("")
         
@@ -292,8 +287,6 @@ def generate_markdown_report(test_results: Dict, output_path: str, test_data_dir
             rel_path = get_relative_path(Path(file_path), md_file_dir)
             
             lines.append(f"![{Path(file_path).name}]({rel_path})")
-            lines.append("")
-            lines.append(f"**Path**: `{rel_path}`")
             lines.append("")
         
         total_tags = len(all_tags)
@@ -355,8 +348,8 @@ def generate_markdown_report(test_results: Dict, output_path: str, test_data_dir
             
             lines.append("")
     
-    if sync_result.get("success"):
-        lines.append("## Data Synchronization (File Hash Based)")
+    if sync_result.get("code") == 0:
+        lines.append("## Data Synchronization")
         lines.append("")
         
         data = sync_result.get("data", {})
@@ -398,13 +391,13 @@ def generate_markdown_report(test_results: Dict, output_path: str, test_data_dir
         lines.append("  -> Python returns sync results")
         lines.append("```")
         lines.append("")
-    elif sync_result.get("error"):
+    elif sync_result.get("code", 1) != 0:
         lines.append("## Data Synchronization")
         lines.append("")
-        lines.append(f"- **Error**: {sync_result.get('error', 'Unknown error')}")
+        lines.append(f"- **Error**: {sync_result.get('status', 'Unknown error')}")
         lines.append("")
     
-    if find_similar_result.get("success"):
+    if find_similar_result.get("code") == 0:
         lines.append("## Find Similar Images (1-to-N)")
         lines.append("")
         
@@ -437,13 +430,13 @@ def generate_markdown_report(test_results: Dict, output_path: str, test_data_dir
             lines.append("No similar images found.")
             lines.append("")
     
-    elif find_similar_result.get("error"):
+    elif find_similar_result.get("code", 1) != 0:
         lines.append("## Find Similar Images")
         lines.append("")
-        lines.append(f"- **Error**: {find_similar_result.get('error', 'Unknown error')}")
+        lines.append(f"- **Error**: {find_similar_result.get('status', 'Unknown error')}")
         lines.append("")
     
-    if detect_groups_result.get("success"):
+    if detect_groups_result.get("code") == 0:
         lines.append("## Detect Similar Groups (N-to-N)")
         lines.append("")
         
@@ -517,7 +510,7 @@ def generate_markdown_report(test_results: Dict, output_path: str, test_data_dir
             lines.append("No groups with 2+ similar images were detected.")
             lines.append("")
     
-    elif detect_groups_result.get("error"):
+    elif detect_groups_result.get("code", 1) != 0:
         lines.append("## Detect Similar Groups")
         lines.append("")
         lines.append(f"- **Error**: {detect_groups_result.get('error', 'Unknown error')}")
@@ -598,17 +591,18 @@ def main():
     # test ping =========================================================== 
     ping_response = process.send_request("ping", {})
     
-    if ping_response and ping_response.get("success"):
+    if ping_response and ping_response.get("code") == 0:
         print("✓ Ping successful")
         test_results["ping"] = {
-            "success": True,
+            "code": 0,
+            "status": "success",
             "message": ping_response.get("data", {}).get("message", "pong")
         }
     else:
         print("✗ Ping failed")
         test_results["ping"] = {
-            "success": False,
-            "message": str(ping_response)
+            "code": 1,
+            "status": str(ping_response) if ping_response else "No response",
         }
     
     print("\n" + "-"*80)
@@ -635,13 +629,13 @@ def main():
     print("\nStep 2: Send start request to Python...")
     
     start_params = {
-        "operation": "start",
+        "cmd": "start",
         "rebuild": True
     }
     
     start_response = process.send_request("index_init", start_params, timeout=300.0)
     
-    if start_response and start_response.get("success"):
+    if start_response and start_response.get("code") == 0:
         start_data = start_response.get("data", {})
         
         print(f"✓ Index build started")
@@ -655,14 +649,13 @@ def main():
         
         while time.time() - start_time < max_wait_time:
             progress_params = {
-                "operation": "get_progress"
+                "cmd": "get_progress"
             }
             
             progress_response = process.send_request("index_init", progress_params)
             
-            if progress_response and progress_response.get("success"):
-                progress_data1 = progress_response.get("data", {})
-                progress_data = progress_data1.get("data", {})
+            if progress_response and progress_response.get("code") == 0:
+                progress_data = progress_response.get("data", {})
                 
                 status = progress_data.get("status", "")
                 processed = progress_data.get("processed_files", 0)
@@ -676,7 +669,8 @@ def main():
                     print(f"✓ Index build completed")
                     
                     test_results["index_init"] = {
-                        "success": True,
+                        "code": 0,
+                        "status": "success",
                         "data": {
                             "total_images": total,
                             "processed_files": processed,
@@ -698,24 +692,24 @@ def main():
         if time.time() - start_time >= max_wait_time:
             print("✗ Index build timeout")
             test_results["index_init"] = {
-                "success": False,
-                "error": "Index build timeout"
+                "code": 1,
+                "status": "Index build timeout"
             }
     else:
         print("✗ Index initialization failed")
-        error = start_response.get("error", "Unknown error") if start_response else "No response"
+        error = start_response.get("status", "Unknown error") if start_response else "No response"
         print(f"  - Error: {error}")
         
         test_results["index_init"] = {
-            "success": False,
-            "error": error
+            "code": 1,
+            "status": error
         }
     
     print("\n" + "-"*80)
     print("Test 3: Text-to-Image Search")
     print("-"*80)
     
-    if test_results.get("index_init", {}).get("success"):
+    if test_results.get("index_init", {}).get("code") == 0:
         # search_params = {
         #     "action": "search",
         #     "query": args.search_query,
@@ -724,7 +718,7 @@ def main():
         # }
         
         search_params = {
-            "action": "search",
+            "cmd": "search",
             "query": args.search_query,
             "top_k": 20
         }
@@ -735,7 +729,7 @@ def main():
         # test search =========================================================== 
         search_response = process.send_request("search", search_params, timeout=30.0)
         
-        if search_response and search_response.get("success"):
+        if search_response and search_response.get("code") == 0:
             search_data = search_response.get("data", {})
             results = search_data.get("results", [])
             query_time = search_data.get("query_time_ms", 0)
@@ -754,7 +748,8 @@ def main():
                 print(f"    {i}. {image_name} (ID: {record_id}, similarity: {similarity:.4f}, rank: {rank})")
             
             test_results["search"] = {
-                "success": True,
+                "code": 0,
+                "status": "success",
                 "query": args.search_query,
                 "query_time_ms": query_time,
                 "results": results,
@@ -762,20 +757,20 @@ def main():
             }
         else:
             print("✗ Search failed")
-            error = search_response.get("error", "Unknown error") if search_response else "No response"
+            error = search_response.get("status", "Unknown error") if search_response else "No response"
             print(f"  - Error: {error}")
             
             test_results["search"] = {
-                "success": False,
-                "query": args.search_query,
-                "error": error
+                "code": 1,
+                "status": error,
+                "query": args.search_query
             }
     else:
         print("✗ Search skipped (index not initialized)")
         test_results["search"] = {
-            "success": False,
-            "query": args.search_query,
-            "error": "Index not initialized"
+            "code": 1,
+            "status": "Index not initialized",
+            "query": args.search_query
         }
     
     print("\n" + "-"*80)
@@ -788,14 +783,14 @@ def main():
         print(f"Testing image: {Path(test_image).name}")
         
         tag_params = {
-            "action": "generate_tags",
+            "cmd": "generate_tags",
             "file_path": test_image,
             "tag_level": "all"
         }
         
         tag_response = process.send_request("tag_detect", tag_params)
         
-        if tag_response and tag_response.get("success"):
+        if tag_response and tag_response.get("code") == 0:
             tag_data = tag_response.get("data", {})
             
             level1_tags = tag_data.get("level1_tags", [])
@@ -830,7 +825,8 @@ def main():
                     print(f"    - {name} (confidence: {confidence:.4f}, type: {attr_type})")
             
             test_results["tag_detect"] = {
-                "success": True,
+                "code": 0,
+                "status": "success",
                 "file_path": test_image,
                 "level1_tags": level1_tags,
                 "level2_tags": level2_tags,
@@ -840,16 +836,16 @@ def main():
         else:
             print("✗ Tag detection failed")
             test_results["tag_detect"] = {
-                "success": False,
-                "file_path": test_image,
-                "tags": []
+                "code": 1,
+                "status": "Tag detection failed",
+                "file_path": test_image
             }
     
     print("\n" + "-"*80)
     print("Test 5: Data Synchronization (File Hash Based)")
     print("-"*80)
     
-    if test_results.get("index_init", {}).get("success") and len(image_files) >= 2:
+    if test_results.get("index_init", {}).get("code") == 0 and len(image_files) >= 2:
         print("Step 1: Simulate Go updating process_file.json...")
         
         first_record_id = 1001
@@ -868,12 +864,12 @@ def main():
         print("\nStep 2: Send sync_all request...")
         
         sync_params = {
-            "operation": "sync_all"
+            "cmd": "sync_all"
         }
         
         sync_response = process.send_request("sync", sync_params, timeout=60.0)
         
-        if sync_response and sync_response.get("success"):
+        if sync_response and sync_response.get("code") == 0:
             sync_data = sync_response.get("data", {})
             
             total_files = sync_data.get("total_files", 0)
@@ -890,34 +886,35 @@ def main():
             print(f"  - Process time: {process_time}ms")
             
             test_results["sync"] = {
-                "success": True,
+                "code": 0,
+                "status": "success",
                 "data": sync_data
             }
         else:
             print("✗ Sync failed")
-            error = sync_response.get("error", "Unknown error") if sync_response else "No response"
+            error = sync_response.get("status", "Unknown error") if sync_response else "No response"
             print(f"  - Error: {error}")
             
             test_results["sync"] = {
-                "success": False,
-                "error": error
+                "code": 1,
+                "status": error
             }
     else:
         print("✗ Sync skipped (index not initialized or insufficient images)")
         test_results["sync"] = {
-            "success": False,
-            "error": "Index not initialized or insufficient images"
+            "code": 1,
+            "status": "Index not initialized or insufficient images"
         }
     
     print("\n" + "-"*80)
     print("Test 6: Find Similar Images")
     print("-"*80)
     
-    if test_results.get("index_init", {}).get("success"):
+    if test_results.get("index_init", {}).get("code") == 0:
         print("Step 1: Find similar images by record_id...")
         # test find similar =========================================================== 
         find_similar_params = {
-            "action": "find_similar",
+            "cmd": "find_similar",
             "record_id": 1001,
             "top_k": args.top_k,
             "min_similarity": 0.5
@@ -925,7 +922,7 @@ def main():
         
         similar_response = process.send_request("find_similar", find_similar_params, timeout=30.0)
         
-        if similar_response and similar_response.get("success"):
+        if similar_response and similar_response.get("code") == 0:
             similar_data = similar_response.get("data", {})
             similar_images = similar_data.get("similar_images", [])
             query_time = similar_data.get("query_time_ms", 0)
@@ -944,7 +941,8 @@ def main():
                 print(f"    {rank}. {image_name} (ID: {record_id}, similarity: {similarity:.4f})")
             
             test_results["find_similar"] = {
-                "success": True,
+                "code": 0,
+                "status": "success",
                 "reference_id": 1001,
                 "similar_images": similar_images,
                 "query_time_ms": query_time,
@@ -952,12 +950,12 @@ def main():
             }
         else:
             print("✗ Find similar failed")
-            error = similar_response.get("error", "Unknown error") if similar_response else "No response"
+            error = similar_response.get("status", "Unknown error") if similar_response else "No response"
             print(f"  - Error: {error}")
             
             test_results["find_similar"] = {
-                "success": False,
-                "error": error
+                "code": 1,
+                "status": error
             }
         
         print("\nStep 2: Find similar images by image path...")
@@ -966,7 +964,7 @@ def main():
             test_image = image_files[0]
             
             find_similar_by_image_params = {
-                "action": "find_similar_by_image",
+                "cmd": "find_similar_by_image",
                 "file_path": test_image,
                 "top_k": args.top_k,
                 "min_similarity": 0.5
@@ -974,7 +972,7 @@ def main():
             
             similar_response = process.send_request("find_similar", find_similar_by_image_params, timeout=60.0)
             
-            if similar_response and similar_response.get("success"):
+            if similar_response and similar_response.get("code") == 0:
                 similar_data = similar_response.get("data", {})
                 similar_images = similar_data.get("similar_images", [])
                 query_time = similar_data.get("query_time_ms", 0)
@@ -997,7 +995,8 @@ def main():
                     print(f"    {rank}. {image_name} (ID: {record_id}, similarity: {similarity:.4f})")
                 
                 test_results["find_similar_by_image"] = {
-                    "success": True,
+                    "code": 0,
+                    "status": "success",
                     "file_path": test_image,
                     "similar_images": similar_images,
                     "query_time_ms": query_time,
@@ -1007,33 +1006,33 @@ def main():
                 }
             else:
                 print("✗ Find similar by image failed")
-                error = similar_response.get("error", "Unknown error") if similar_response else "No response"
+                error = similar_response.get("status", "Unknown error") if similar_response else "No response"
                 print(f"  - Error: {error}")
                 
                 test_results["find_similar_by_image"] = {
-                    "success": False,
-                    "error": error
+                    "code": 1,
+                    "status": error
                 }
     else:
         print("✗ Find similar skipped (index not initialized)")
         test_results["find_similar"] = {
-            "success": False,
-            "error": "Index not initialized"
+            "code": 1,
+            "status": "Index not initialized"
         }
         test_results["find_similar_by_image"] = {
-            "success": False,
-            "error": "Index not initialized"
+            "code": 1,
+            "status": "Index not initialized"
         }
     
     print("\n" + "-"*80)
     print("Test 7: Detect Similar Groups (N-to-N Similarity Detection)")
     print("-"*80)
     
-    if test_results.get("index_init", {}).get("success"):
+    if test_results.get("index_init", {}).get("code") == 0:
         print("Step 1: Detect similar groups across all images...")
         # test detect similar groups =========================================================== 
         detect_groups_params = {
-            "action": "detect_similar_groups",
+            "cmd": "detect_similar_groups",
             "min_similarity": 0.85,
             "scope": "all",
             "top_k_per_image": 10
@@ -1041,7 +1040,7 @@ def main():
         
         detect_response = process.send_request("find_similar", detect_groups_params, timeout=60.0)
         
-        if detect_response and detect_response.get("success"):
+        if detect_response and detect_response.get("code") == 0:
             detect_data = detect_response.get("data", {})
             
             total_images = detect_data.get("total_images", 0)
@@ -1080,7 +1079,8 @@ def main():
                             print(f"            {image_name} (ID: {record_id}, sim_to_rep: {sim_to_rep:.4f})")
             
             test_results["detect_similar_groups"] = {
-                "success": True,
+                "code": 0,
+                "status": "success",
                 "total_images": total_images,
                 "total_groups": total_groups,
                 "total_similar_pairs": total_pairs,
@@ -1090,12 +1090,12 @@ def main():
             }
         else:
             print("✗ Detect similar groups failed")
-            error = detect_response.get("error", "Unknown error") if detect_response else "No response"
+            error = detect_response.get("status", "Unknown error") if detect_response else "No response"
             print(f"  - Error: {error}")
             
             test_results["detect_similar_groups"] = {
-                "success": False,
-                "error": error
+                "code": 1,
+                "status": error
             }
         
         print("\nStep 2: Detect similar groups for specific record_ids...")
@@ -1105,7 +1105,7 @@ def main():
             sample_ids = list(record_id_to_path.keys())[:5]
             
             detect_partial_params = {
-                "action": "detect_similar_groups",
+                "cmd": "detect_similar_groups",
                 "min_similarity": 0.8,
                 "scope": "partial",
                 "record_ids": sample_ids,
@@ -1114,7 +1114,7 @@ def main():
             
             detect_partial_response = process.send_request("find_similar", detect_partial_params, timeout=30.0)
             
-            if detect_partial_response and detect_partial_response.get("success"):
+            if detect_partial_response and detect_partial_response.get("code") == 0:
                 partial_data = detect_partial_response.get("data", {})
                 
                 print(f"✓ Detect similar groups (partial) successful")
@@ -1123,7 +1123,8 @@ def main():
                 print(f"  - Query time: {partial_data.get('query_time_ms', 0)}ms")
                 
                 test_results["detect_similar_groups_partial"] = {
-                    "success": True,
+                    "code": 0,
+                    "status": "success",
                     "scope": "partial",
                     "record_ids": sample_ids,
                     "total_groups": partial_data.get("total_groups", 0),
@@ -1131,18 +1132,18 @@ def main():
                 }
             else:
                 print("✗ Detect similar groups (partial) failed")
-                error = detect_partial_response.get("error", "Unknown error") if detect_partial_response else "No response"
+                error = detect_partial_response.get("status", "Unknown error") if detect_partial_response else "No response"
                 print(f"  - Error: {error}")
                 
                 test_results["detect_similar_groups_partial"] = {
-                    "success": False,
-                    "error": error
+                    "code": 1,
+                    "status": error
                 }
     else:
         print("✗ Detect similar groups skipped (index not initialized)")
         test_results["detect_similar_groups"] = {
-            "success": False,
-            "error": "Index not initialized"
+            "code": 1,
+            "status": "Index not initialized"
         }
     
     process.stop()
@@ -1151,7 +1152,7 @@ def main():
     output_dir.mkdir(exist_ok=True)
     
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    md_path = output_dir / f"stdio_communication_test_{timestamp}.md"
+    md_path = output_dir / f"ai-test-report-{timestamp}.md"
     
     generate_markdown_report(test_results, str(md_path), test_data_dir)
     

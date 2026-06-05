@@ -155,9 +155,9 @@ class SearchEngine(BaseEngine):
     def process(self, params: dict) -> dict:
         self._ensure_model()
 
-        action = params.get("action", "")
+        cmd = params.get("cmd", "")
         
-        if action == "encode_image":
+        if cmd == "encode_image":
             file_path = params.get("file_path", "")
             if not file_path:
                 raise ValueError("file_path is required")
@@ -168,7 +168,7 @@ class SearchEngine(BaseEngine):
                 "shape": features.shape,
             }
         
-        elif action == "encode_text":
+        elif cmd == "encode_text":
             text = params.get("text", "")
             if not text:
                 raise ValueError("text is required")
@@ -179,7 +179,7 @@ class SearchEngine(BaseEngine):
                 "shape": features.shape,
             }
         
-        elif action == "search_by_text":
+        elif cmd == "search_by_text":
             text = params.get("text", "")
             file_paths = params.get("file_paths", [])
             top_k = params.get("top_k", 5)
@@ -209,7 +209,7 @@ class SearchEngine(BaseEngine):
                 "results": results[:top_k],
             }
         
-        elif action == "compare_images":
+        elif cmd == "compare_images":
             file_path1 = params.get("file_path1", "")
             file_path2 = params.get("file_path2", "")
             
@@ -227,4 +227,4 @@ class SearchEngine(BaseEngine):
             }
         
         else:
-            raise ValueError(f"Unknown action: {action}")
+            raise ValueError(f"Unknown cmd: {cmd}")

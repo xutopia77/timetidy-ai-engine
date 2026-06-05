@@ -84,25 +84,25 @@ class SimilarityEngine(BaseEngine):
                 )
     
     def process(self, params: dict) -> dict:
-        action = params.get("action", "find_similar")
+        cmd = params.get("cmd", "")
         
-        if action == "find_similar":
+        if cmd == "find_similar":
             return self._find_similar(params)
         
-        elif action == "find_similar_by_image":
+        elif cmd == "find_similar_by_image":
             return self._find_similar_by_image(params)
         
-        elif action == "batch_find_similar":
+        elif cmd == "batch_find_similar":
             return self._batch_find_similar(params)
         
-        elif action == "detect_similar_groups":
+        elif cmd == "detect_similar_groups":
             return self._detect_similar_groups(params)
         
-        elif action == "get_status":
+        elif cmd == "get_status":
             return self._get_status()
         
         else:
-            raise ValueError(f"Unknown action: {action}")
+            raise ValueError(f"Unknown cmd: {cmd}")
     
     def _find_similar(self, params: dict) -> dict:
         """

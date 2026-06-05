@@ -43,26 +43,26 @@ class IndexInitEngine(BaseEngine):
         print(f"IndexInitEngine initialized (file_hash based)", file=sys.stderr)
     
     def process(self, params: dict) -> dict:
-        operation = params.get("operation", "")
+        cmd = params.get("cmd", "")
         
-        if operation == "start":
+        if cmd == "start":
             rebuild = params.get("rebuild", False)
             return self._start_build(rebuild)
         
-        elif operation == "stop":
+        elif cmd == "stop":
             return self._stop_build()
         
-        elif operation == "continue":
+        elif cmd == "continue":
             return self._continue_build()
         
-        elif operation == "get_progress":
+        elif cmd == "get_progress":
             return self._get_progress()
         
-        elif operation == "get_status":
+        elif cmd == "get_status":
             return self._get_status()
         
         else:
-            raise ValueError(f"Unknown operation: {operation}")
+            raise ValueError(f"Unknown cmd: {cmd}")
     
     def _start_build(self, rebuild: bool) -> dict:
         """

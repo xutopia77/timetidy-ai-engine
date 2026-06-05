@@ -112,7 +112,7 @@ class PythonProcess:
         try:
             for line in self.process.stderr:
                 if line:
-                    print(f"[AI stderr] {line.strip()}")
+                    print(f"[ai-log] {line.strip()}")
         except Exception as e:
             print(f"Error reading stderr: {e}")
     
@@ -126,7 +126,7 @@ class PythonProcess:
         request = {
             "id": request_id,
             "action": action,
-            "params": params
+            "data": params
         }
         
         response_queue = queue.Queue()
@@ -204,7 +204,7 @@ def test_communication():
     print("\nTesting ping...")
     response = process.send_request("ping", {})
     
-    if response and response.get("success"):
+    if response and response.get("code") == 0:
         print("✓ Ping successful")
         print(f"  Response: {response}")
     else:

@@ -35,16 +35,16 @@ class SyncEngine(BaseEngine):
         print(f"SyncEngine initialized (file_hash based)", file=sys.stderr)
     
     def process(self, params: dict) -> dict:
-        operation = params.get("operation", "")
+        cmd = params.get("cmd", "")
         
-        if operation == "sync_all":
+        if cmd == "sync_all":
             return self._sync_all(params)
         
-        elif operation == "get_status":
+        elif cmd == "get_status":
             return self._get_status()
         
         else:
-            raise ValueError(f"Unknown operation: {operation}")
+            raise ValueError(f"Unknown cmd: {cmd}")
     
     def _sync_all(self, params: dict) -> dict:
         """

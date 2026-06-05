@@ -160,7 +160,7 @@
 | index_init | 索引初始化 | start、stop、continue、get_progress、get_status |
 | sync | 数据同步 | sync_all、get_status |
 | tag_detect | 标签检测 | generate_tags、classify_hierarchical |
-| find_similar | 相似图搜索 | find_similar、find_similar_by_image、batch_find_similar、detect_similar_groups |
+| find_similar | 相似图搜索 | find_similar、batch_find_similar、detect_similar_groups |
 | ping | 通信测试 | 无 |
 
 优势：
@@ -340,7 +340,6 @@ SearchEngine（搜索引擎）
 
 SimilarityEngine（相似度引擎）
 ├── find_similar           → 图搜图（图片在索引中，默认场景）
-├── find_similar_by_image  → 图搜图（图片不在索引中，外部图片）
 ├── batch_find_similar     → 批量图搜图
 └── detect_similar_groups  → 全相册相似检测（N-to-N）
 
@@ -582,11 +581,6 @@ SimilarityEngine 提供多种相似度搜索模式：
 │  - 流程：从索引获取向量 → FAISS搜索 → 返回结果                     │
 │  - 性能：~2-5ms                                                  │
 ├─────────────────────────────────────────────────────────────────┤
-│  find_similar_by_image                                          │
-│  - 输入：图片文件路径（图片不在索引中）                            │
-│  - 流程：编码图片 → FAISS搜索 → 返回结果                          │
-│  - 性能：~50-100ms（编码时间占主要）                              │
-├─────────────────────────────────────────────────────────────────┤
 │  batch_find_similar                                             │
 │  - 输入：多个参考图片 record_id 列表                              │
 │  - 流程：批量从索引获取向量 → 批量FAISS搜索 → 返回结果              │
@@ -628,35 +622,6 @@ find_similar接口：
      },
      "data_dbg": {
        "query_time_ms": 3.2
-     }
-   }
-
-find_similar_by_image接口：
-1. 接收JSON请求：
-   {
-     "id": "1234567890",
-     "action": "find_similar",
-     "data": {
-       "cmd": "find_similar_by_image",
-       "file_path": "/path/to/image.jpg",
-       "top_k": 10,
-       "min_similarity": 0.5
-     }
-   }
-
-2. 返回JSON响应：
-   {
-     "id": "1234567890",
-     "code": 0,
-     "status": "success",
-     "data": {
-       "similar_images": [
-         {"record_id": 1005, "similarity": 0.95, "rank": 1},
-         {"record_id": 1020, "similarity": 0.89, "rank": 2}
-       ]
-     },
-     "data_dbg": {
-       "query_time_ms": 50.5
      }
    }
 
@@ -831,11 +796,6 @@ SimilarityEngine 提供多种相似度计算功能：
 │  - 流程：从索引获取向量 → FAISS搜索 → 返回结果                     │
 │  - 性能：~2-5ms                                                  │
 │  - 说明：等同于 SearchEngine.search_by_image                      │
-├─────────────────────────────────────────────────────────────────┤
-│  find_similar_by_image（图搜图，外部图片）                        │
-│  - 输入：图片路径 file_path 或 file_paths 数组（图片不在索引中）   │
-│  - 流程：编码图片 → FAISS搜索 → 返回结果                          │
-│  - 性能：~50-100ms（编码时间占主要）                              │
 ├─────────────────────────────────────────────────────────────────┤
 │  batch_find_similar（批量图搜图）                                 │
 │  - 输入：多个 record_id                                          │

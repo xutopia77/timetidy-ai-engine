@@ -561,69 +561,9 @@ def main():
                 "code": 1,
                 "status": error
             }
-        
-        print("\nStep 2: Find similar images by image path...")
-        # test find similar by image =========================================================== 
-        if image_files:
-            test_image = image_files[0]
-            
-            find_similar_by_image_params = {
-                "cmd": "find_similar_by_image",
-                "file_path": test_image,
-                "top_k": args.top_k,
-                "min_similarity": 0.5
-            }
-            
-            similar_response = process.send_request("find_similar", find_similar_by_image_params, timeout=60.0)
-            
-            if similar_response and similar_response.get("code") == 0:
-                similar_data = similar_response.get("data", {})
-                similar_images = similar_data.get("similar_images", [])
-                query_time = similar_data.get("query_time_ms", 0)
-                encode_time = similar_data.get("encode_time_ms", 0)
-                search_time = similar_data.get("search_time_ms", 0)
-                
-                print(f"✓ Find similar by image successful, found {len(similar_images)} similar images")
-                print(f"  - Total time: {query_time}ms")
-                print(f"  - Encode time: {encode_time}ms")
-                print(f"  - Search time: {search_time}ms")
-                
-                record_id_to_path = test_results.get("index_init", {}).get("record_id_to_path", {})
-                
-                for result in similar_images:
-                    record_id = result.get("record_id")
-                    similarity = result.get("similarity")
-                    rank = result.get("rank")
-                    image_path = record_id_to_path.get(record_id, "")
-                    image_name = Path(image_path).name if image_path else f"ID_{record_id}"
-                    print(f"    {rank}. {image_name} (ID: {record_id}, similarity: {similarity:.4f})")
-                
-                test_results["find_similar_by_image"] = {
-                    "code": 0,
-                    "status": "success",
-                    "file_path": test_image,
-                    "similar_images": similar_images,
-                    "query_time_ms": query_time,
-                    "encode_time_ms": encode_time,
-                    "search_time_ms": search_time,
-                    "record_id_to_path": record_id_to_path
-                }
-            else:
-                print("✗ Find similar by image failed")
-                error = similar_response.get("status", "Unknown error") if similar_response else "No response"
-                print(f"  - Error: {error}")
-                
-                test_results["find_similar_by_image"] = {
-                    "code": 1,
-                    "status": error
-                }
     else:
         print("✗ Find similar skipped (index not initialized)")
         test_results["find_similar"] = {
-            "code": 1,
-            "status": "Index not initialized"
-        }
-        test_results["find_similar_by_image"] = {
             "code": 1,
             "status": "Index not initialized"
         }
@@ -770,7 +710,6 @@ def main():
     print(f"✓ Tag Detect: {test_results.get('tag_detect', {}).get('success', False)}")
     print(f"✓ Sync All: {test_results.get('sync', {}).get('success', False)}")
     print(f"✓ Find Similar: {test_results.get('find_similar', {}).get('success', False)}")
-    print(f"✓ Find Similar by Image: {test_results.get('find_similar_by_image', {}).get('success', False)}")
     print(f"✓ Detect Similar Groups: {test_results.get('detect_similar_groups', {}).get('success', False)}")
     
     detect_result = test_results.get('detect_similar_groups', {})

@@ -108,18 +108,19 @@
 
 **stdio通信协议：**
 
-
 通信方式：
 - Go启动Python子进程（python main.py）
 - Go通过stdin发送JSON请求（每行一个JSON对象）
 - Python通过stdout返回JSON响应（每行一个JSON对象）
 - Python通过stderr输出日志信息
+
 ```json
 请求格式：
 {
   "id": "1234567890",        // 请求ID（时间戳）
-  "action": "search",        // 操作类型
-  "params": {                // 参数
+  "action": "search",        // 操作类型，也就是对应的engine
+  "data": {                // 参数，根据每一个action有所不同
+    "cmd": "search",      // 子操作（可选）
     "query": "风景",
     "top_k": 10
   }
@@ -128,13 +129,25 @@
 响应格式：
 {
   "id": "1234567890",        // 请求ID（与请求匹配）
-  "success": true,           // 是否成功
+  "code": 0,           // 0 成功，1 失败， 其他状态根据action不同可以自由扩展
+  "status": "",                // 状态，成功时是success，错误时是错误原因
   "data": {                  // 结果数据
-    "results": [...]
-  },
-  "error": ""                // 错误信息（失败时）
+    "results": [...]      // 每一个请求都有自己的数据结果
+  }
 }
 ```
+
+**支持的action列表：**
+
+| action | 说明 | 子操作（data.cmd） |
+|--------|------|----------------------------------------|
+| search | 文搜图、图搜图 | search（默认）、encode_image、encode_text、get_status |
+| index_init | 索引初始化 | start、stop、continue、get_progress（默认）、get_status |
+| sync | 数据同步 | sync_all、get_status |
+| tag_detect | 标签检测 | generate_tags（默认）、classify_hierarchical |
+| find_similar | 相似图搜索 | find_similar（默认）、find_similar_by_image、batch_find_similar、detect_similar_groups |
+| ping | 通信测试 | 无 |
+
 优势：
 - 进程常驻，避免每次启动Python的开销
 - 简单的请求-响应模型
@@ -254,7 +267,8 @@ SearchEngine 提供两种搜索模式：
    {
      "id": "1234567890",
      "action": "search",
-     "params": {
+     "data": {
+       "cmd": "search",      // 可选，默认为search
        "query": "风景照片",
        "top_k": 10,
        "filters": {
@@ -266,7 +280,8 @@ SearchEngine 提供两种搜索模式：
 2. 返回JSON响应：
    {
      "id": "1234567890",
-     "success": true,
+     "code": 0,
+     "status": "success",
      "data": {
        "query": "风景照片",
        "results": [
@@ -278,13 +293,18 @@ SearchEngine 提供两种搜索模式：
      }
    }
 
-图搜图接口（复用 find_similar）：
+其他接口：
+- encode_image: 编码图片特征
+- encode_text: 编码文本特征
+- get_status: 获取引擎状态
+
+图搜图接口（使用 find_similar action）：
 1. 接收JSON请求：
    {
      "id": "1234567890",
      "action": "find_similar",
-     "params": {
-       "action": "find_similar",
+     "data": {
+       "cmd": "find_similar",
        "record_id": 1001,
        "top_k": 10,
        "min_similarity": 0.5
@@ -294,7 +314,8 @@ SearchEngine 提供两种搜索模式：
 2. 返回JSON响应：
    {
      "id": "1234567890",
-     "success": true,
+     "code": 0,
+     "status": "success",
      "data": {
        "reference_id": 1001,
        "similar_images": [
@@ -312,7 +333,9 @@ SearchEngine 提供两种搜索模式：
 ```
 SearchEngine（搜索引擎）
 ├── search               → 文搜图（文本编码 + FAISS搜索）
-└── search_by_image      → 图搜图（复用 SimilarityEngine.find_similar）
+├── encode_image         → 编码图片特征
+├── encode_text          → 编码文本特征
+└── get_status           → 获取引擎状态
 
 SimilarityEngine（相似度引擎）
 ├── find_similar           → 图搜图（图片在索引中，默认场景）
@@ -322,7 +345,7 @@ SimilarityEngine（相似度引擎）
 
 结论：
 - 图搜图 = SimilarityEngine.find_similar（默认场景）
-- SearchEngine 可新增 search_by_image action，内部调用 find_similar
+- SearchEngine 主要用于文搜图，图搜图使用 find_similar action
 ```
 
 #### 2.2 分层标签生成功能（HierarchicalTagEngine）
@@ -411,13 +434,13 @@ SimilarityEngine（相似度引擎）
 **函数接口设计：**
 
 ```
-
 Python处理流程：
 1. 接收JSON请求：
    {
      "id": "1234567890",
      "action": "tag_detect",
-     "params": {
+     "data": {
+       "cmd": "generate_tags",  // 可选，默认为generate_tags
        "record_id": 1001,
        "file_path": "/path/to/image.jpg",
        "tag_level": "all",  // "level1", "level2", "attributes", "all"
@@ -430,7 +453,8 @@ Python处理流程：
 2. 处理请求并返回JSON响应：
    {
      "id": "1234567890",
-     "success": true,
+     "code": 0,
+     "status": "success",
      "data": {
        "record_id": 1001,
        "file_path": "/path/to/image.jpg",
@@ -462,6 +486,9 @@ Python处理流程：
        "process_time_ms": 50
      }
    }
+
+其他接口：
+- classify_hierarchical: 分层分类（与generate_tags类似）
 ```
 
 **配置文件说明：**
@@ -546,7 +573,168 @@ Python处理流程：
 ✓ 支持多提示词提高准确度
 ```
 
-#### 2.3 图片描述生成功能（DescribeEngine）
+#### 2.3 图片相似度搜索功能（SimilarityEngine）
+
+**功能概述：**
+
+```
+SimilarityEngine 提供多种相似度搜索模式：
+
+┌─────────────────────────────────────────────────────────────────┐
+│  find_similar（默认）                                            │
+│  - 输入：参考图片 record_id（图片已在索引中）                      │
+│  - 流程：从索引获取向量 → FAISS搜索 → 返回结果                     │
+│  - 性能：~2-5ms                                                  │
+├─────────────────────────────────────────────────────────────────┤
+│  find_similar_by_image                                          │
+│  - 输入：图片文件路径（图片不在索引中）                            │
+│  - 流程：编码图片 → FAISS搜索 → 返回结果                          │
+│  - 性能：~50-100ms（编码时间占主要）                              │
+├─────────────────────────────────────────────────────────────────┤
+│  batch_find_similar                                             │
+│  - 输入：多个参考图片 record_id 列表                              │
+│  - 流程：批量从索引获取向量 → 批量FAISS搜索 → 返回结果              │
+│  - 性能：~5-10ms（批量优化）                                      │
+├─────────────────────────────────────────────────────────────────┤
+│  detect_similar_groups                                          │
+│  - 输入：全相册图片                                              │
+│  - 流程：N-to-N相似检测 → Union-Find分组 → 返回相似组              │
+│  - 性能：~2-3s（10,000张图片）                                    │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**函数接口设计：**
+
+```
+find_similar接口：
+1. 接收JSON请求：
+   {
+     "id": "1234567890",
+     "action": "find_similar",
+     "data": {
+       "cmd": "find_similar",  // 可选，默认为find_similar
+       "record_id": 1001,
+       "top_k": 10,
+       "min_similarity": 0.5
+     }
+   }
+
+2. 返回JSON响应：
+   {
+     "id": "1234567890",
+     "code": 0,
+     "status": "success",
+     "data": {
+       "reference_id": 1001,
+       "similar_images": [
+         {"record_id": 1005, "similarity": 0.95, "rank": 1},
+         {"record_id": 1020, "similarity": 0.89, "rank": 2}
+       ],
+       "query_time_ms": 3.2,
+       "total_count": 2
+     }
+   }
+
+find_similar_by_image接口：
+1. 接收JSON请求：
+   {
+     "id": "1234567890",
+     "action": "find_similar",
+     "data": {
+       "cmd": "find_similar_by_image",
+       "file_path": "/path/to/image.jpg",
+       "top_k": 10,
+       "min_similarity": 0.5
+     }
+   }
+
+2. 返回JSON响应：
+   {
+     "id": "1234567890",
+     "code": 0,
+     "status": "success",
+     "data": {
+       "file_path": "/path/to/image.jpg",
+       "similar_images": [
+         {"record_id": 1005, "similarity": 0.95, "rank": 1},
+         {"record_id": 1020, "similarity": 0.89, "rank": 2}
+       ],
+       "query_time_ms": 50.5,
+       "total_count": 2
+     }
+   }
+
+batch_find_similar接口：
+1. 接收JSON请求：
+   {
+     "id": "1234567890",
+     "action": "find_similar",
+     "data": {
+       "cmd": "batch_find_similar",
+       "record_ids": [1001, 1002, 1003],
+       "top_k": 10,
+       "min_similarity": 0.5
+     }
+   }
+
+2. 返回JSON响应：
+   {
+     "id": "1234567890",
+     "code": 0,
+     "status": "success",
+     "data": {
+       "results": [
+         {
+           "reference_id": 1001,
+           "similar_images": [...]
+         },
+         {
+           "reference_id": 1002,
+           "similar_images": [...]
+         }
+       ],
+       "total_time_ms": 10.5,
+       "batch_size": 3
+     }
+   }
+
+detect_similar_groups接口：
+1. 接收JSON请求：
+   {
+     "id": "1234567890",
+     "action": "find_similar",
+     "data": {
+       "cmd": "detect_similar_groups",
+       "min_similarity": 0.9,
+       "min_group_size": 2
+     }
+   }
+
+2. 返回JSON响应：
+   {
+     "id": "1234567890",
+     "code": 0,
+     "status": "success",
+     "data": {
+       "similar_groups": [
+         {
+           "group_id": 1,
+           "members": [1001, 1005, 1020],
+           "avg_similarity": 0.95
+         },
+         {
+           "group_id": 2,
+           "members": [1002, 1008],
+           "avg_similarity": 0.92
+         }
+       ],
+       "total_groups": 2,
+       "total_time_ms": 2500.5
+     }
+   }
+```
+
+#### 2.4 图片描述生成功能（DescribeEngine）
 
 **功能需求：**
 
@@ -603,7 +791,7 @@ Python处理流程：
    {
      "id": "1234567890",
      "action": "generate_description",
-     "params": {
+     "data": {
        "record_id": 1001,
        "language": "zh"  // 中文描述
      }
@@ -612,7 +800,8 @@ Python处理流程：
 2. 处理请求并返回JSON响应：
    {
      "id": "1234567890",
-     "success": true,
+     "code": 0,
+     "status": "success",
      "data": {
        "record_id": 1001,
        "description": "这是一张风景照片，包含山脉和日落景象，天空呈现橙红色",
@@ -693,7 +882,7 @@ Python处理流程：
    {
      "id": "1234567890",
      "action": "find_similar",
-     "params": {
+     "data": {
        "record_id": 1001,
        "top_k": 10,
        "min_similarity": 0.8
@@ -703,7 +892,8 @@ Python处理流程：
 2. 处理请求并返回JSON响应：
    {
      "id": "1234567890",
-     "success": true,
+     "code": 0,
+     "status": "success",
      "data": {
        "reference_id": 1001,
        "similar_images": [
@@ -770,8 +960,8 @@ Python处理流程：
    {
      "id": "1234567890",
      "action": "find_similar",
-     "params": {
-       "action": "detect_similar_groups",
+     "data": {
+       "cmd": "detect_similar_groups",
        "min_similarity": 0.9,
        "scope": "all",
        "record_ids": [],
@@ -791,7 +981,8 @@ Python处理流程：
 2. 处理请求并返回JSON响应：
    {
      "id": "1234567890",
-     "success": true,
+     "code": 0,
+     "status": "success",
      "data": {
        "total_images": 10000,
        "total_groups": 15,
@@ -916,13 +1107,13 @@ Go相册主体 → Python AI模块（通过process_file.json）
 **同步函数接口设计：**
 
 ```
-Python处理流程：
+IndexInitEngine接口：
 1. 接收JSON请求：
    {
      "id": "1234567890",
      "action": "index_init",
-     "params": {
-       "operation": "start",
+     "data": {
+       "cmd": "start",  // start、stop、continue、get_progress（默认）、get_status
        "rebuild": false
      }
    }
@@ -957,7 +1148,8 @@ Python处理流程：
 5. 返回JSON响应：
    {
      "id": "1234567890",
-     "success": true,
+     "code": 0,
+     "status": "success",
      "data": {
        "operation": "start",
        "total_files": 10000,
@@ -965,6 +1157,30 @@ Python处理流程：
        "skipped_files": 9950,  // 跳过了9950个file_hash未变化的文件
        "status": "completed",
        "message": "Index sync completed"
+     }
+   }
+
+SyncEngine接口：
+1. 接收JSON请求：
+   {
+     "id": "1234567890",
+     "action": "sync",
+     "data": {
+       "cmd": "sync_all"  // sync_all、get_status
+     }
+   }
+
+2. 返回JSON响应：
+   {
+     "id": "1234567890",
+     "code": 0,
+     "status": "success",
+     "data": {
+       "total_files": 10000,
+       "processed_files": 50,
+       "skipped_files": 9950,
+       "failed_files": 0,
+       "process_time_ms": 1234.56
      }
    }
 ```
@@ -1225,8 +1441,8 @@ Python处理流程：
    {
      "id": "1234567890",
      "action": "index_init",
-     "params": {
-       "operation": "start",  // "start", "stop", "continue", "get_progress"
+     "data": {
+       "cmd": "start",  // "start", "stop", "continue", "get_progress"
        "rebuild": false  // 是否重建索引
      }
    }
@@ -1234,7 +1450,8 @@ Python处理流程：
 2. 处理请求并返回JSON响应：
    {
      "id": "1234567890",
-     "success": true,
+     "code": 0,
+     "status": "success",
      "data": {
        "operation": "start",
        "total_files": 10000,
@@ -1301,8 +1518,8 @@ Python处理流程：
    {
      "id": "1234567890",
      "action": "index_init",
-     "params": {
-       "operation": "start",
+     "data": {
+       "cmd": "start",
        "rebuild": true
      }
    }
@@ -1310,7 +1527,8 @@ Python处理流程：
 2. 处理请求并返回JSON响应：
    {
      "id": "1234567890",
-     "success": true,
+     "code": 0,
+     "status": "success",
      "data": {
        "operation": "start",
        "rebuild": true,
@@ -1340,7 +1558,8 @@ Go监控进度：
 
 进度响应示例：
 {
-  "success": true,
+  "code": 0,
+  "status": "success",
   "data": {
     "total_files": 10000,
     "processed_files": 5000,
@@ -1560,13 +1779,14 @@ Python处理流程：
    {
      "id": "1234567890",
      "action": "get_status",
-     "params": {}
+     "data": {}
    }
 
 2. 处理请求并返回JSON响应：
    {
      "id": "1234567890",
-     "success": true,
+     "code": 0,
+     "status": "success",
      "data": {
        "status": "healthy",
        "index_loaded": true,
@@ -1632,10 +1852,12 @@ func (p *PythonProcess) readStderr(stderr io.Reader) {
 
 ```
 {
-  "success": false,
-  "error_code": "INDEX_NOT_LOADED",
-  "error_message": "FAISS index not loaded, please initialize first",
-  "suggestion": "Call /api/v1/index/init to build index",
+  "code": 1,
+  "status": "INDEX_NOT_LOADED",
+  "data": {
+    "error_message": "FAISS index not loaded, please initialize first",
+    "suggestion": "Call /api/v1/index/init to build index"
+  },
   "timestamp": "2024-01-01T10:00:00Z"
 }
 ```

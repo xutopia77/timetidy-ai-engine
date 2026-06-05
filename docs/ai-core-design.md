@@ -90,21 +90,15 @@
 - Go启动时自动启动Python子进程
 - Python进程崩溃自动重启（可选）
 
-原则4: 异步处理
-- AI功能异步处理（避免阻塞Go主程序）
-- 批量操作后台执行
-- 进度通知机制
-
-原则5: 容错设计
+原则4: 容错设计
 - AI模块独立进程（故障不影响相册主体）
 - 自动恢复机制
 - 手动重建接口
 
-原则6: 性能优化
+原则5: 性能优化
 - 向量数据库毫秒级搜索
 - 特征缓存复用
 - 批量编码加速
-- 无HTTP开销（stdio通信更快）
 
 **stdio通信协议：**
 
@@ -117,10 +111,10 @@
 ```json
 请求格式：
 {
-  "id": "1234567890",        // 请求ID（时间戳）
-  "action": "search",        // 操作类型，也就是对应的engine
-  "data": {                // 参数，根据每一个action有所不同
-    "cmd": "search",      // 子操作（可选）
+  "id": "1234567890", // 请求ID（时间戳）
+  "action": "search", // 操作类型，也就是对应的engine
+  "data": {           // 参数，根据每一个action有所不同
+    "cmd": "search",  // 子操作（可选）
     "query": "风景",
     "top_k": 10
   }
@@ -128,15 +122,15 @@
 
 响应格式：
 {
-  "id": "1234567890",        // 请求ID（与请求匹配）
-  "code": 0,                 // 0 成功，1 失败，其他状态根据action不同可以自由扩展
-  "status": "success",       // 状态，成功时是success，错误时是错误原因
-  "data": {                  // Go需要的核心数据（简洁易解析）
-    "results": [...]         // 每一个请求都有自己的数据结果
+  "id": "1234567890",   // 请求ID（与请求匹配）
+  "code": 0,            // 0 成功，1 失败，其他状态根据action不同可以自由扩展
+  "status": "success",  // 状态，成功时是success，错误时是错误原因
+  "data": {             // Go需要的核心数据（简洁易解析）
+    "results": [...]    // 每一个请求都有自己的数据结果
   },
-  "data_dbg": {             // 辅助调试数据（可选，不影响Go处理）
-    "query_time_ms": 3.5,    // 调试信息，如处理时间
-    "results": [...]        // 其他调试信息
+  "data_dbg": {           // 辅助调试数据（可选，不影响Go处理）
+    "query_time_ms": 3.5, // 调试信息，如处理时间
+    "results": [...]      // 其他调试信息
   }
 }
 ```
@@ -162,11 +156,11 @@
 
 | action | 说明 | 子操作（data.cmd） |
 |--------|------|----------------------------------------|
-| search | 文搜图、图搜图 | search（默认）、encode_image、encode_text、get_status |
-| index_init | 索引初始化 | start、stop、continue、get_progress（默认）、get_status |
+| search | 文搜图、图搜图 | search、encode_image、encode_text、get_status |
+| index_init | 索引初始化 | start、stop、continue、get_progress、get_status |
 | sync | 数据同步 | sync_all、get_status |
-| tag_detect | 标签检测 | generate_tags（默认）、classify_hierarchical |
-| find_similar | 相似图搜索 | find_similar（默认）、find_similar_by_image、batch_find_similar、detect_similar_groups |
+| tag_detect | 标签检测 | generate_tags、classify_hierarchical |
+| find_similar | 相似图搜索 | find_similar、find_similar_by_image、batch_find_similar、detect_similar_groups |
 | ping | 通信测试 | 无 |
 
 优势：
@@ -223,8 +217,6 @@ SearchEngine 提供两种搜索模式：
 │  - 实现：复用 SimilarityEngine.find_similar                      │
 └─────────────────────────────────────────────────────────────────┘
 
-注意：图搜图默认场景是图片已在索引中。
-     若图片不在索引中（外部图片），使用 SimilarityEngine.find_similar_by_image。
 ```
 
 **文搜图（search）：**
@@ -265,19 +257,7 @@ SearchEngine 提供两种搜索模式：
 - 图片向量已在索引中，无需重新编码
 - 搜索时间：~2-5ms
 
-场景区分：
-┌─────────────────────────────────────────────────────────────────┐
-│  场景1：图片在索引中（默认）                                      │
-│  → SearchEngine.search_by_image(record_id)                      │
-│  → 或 SimilarityEngine.find_similar(record_id)                  │
-│  → 直接从索引获取向量，无需编码                                   │
-│  → 性能：~2-5ms                                                 │
-├─────────────────────────────────────────────────────────────────┤
-│  场景2：图片不在索引中（外部图片）                                 │
-│  → SimilarityEngine.find_similar_by_image(file_path)           │
-│  → 需要先编码图片，然后搜索                                       │
-│  → 性能：~50-100ms（编码时间占主要）                              │
-└─────────────────────────────────────────────────────────────────┘
+如果图片不在索引中（外部图片），就返回错误，不再处理，降低项目复杂度。
 ```
 
 **函数接口设计：**
@@ -289,7 +269,7 @@ SearchEngine 提供两种搜索模式：
      "id": "1234567890",
      "action": "search",
      "data": {
-       "cmd": "search",      // 可选，默认为search
+       "cmd": "search", // 可选，默认为search
        "query": "风景照片",
        "top_k": 10,
        "filters": {
@@ -409,21 +389,16 @@ SimilarityEngine（相似度引擎）
 三级标签体系：
 
 一级分类（Level 1）- 10个大类：
-- 旅游出行、日常生活、亲子育儿、人物肖像
-- 聚会庆祝、美食餐饮、宠物萌宠、户外自然
-- 兴趣爱好、其他
+- 旅游出行、日常生活、其他
+- ...（详见配置文件）
 
 二级分类（Level 2）- 每个一级分类下的细分：
 - 旅游出行 → 国内游、出境游、周边游、景点打卡、旅行风景
-- 日常生活 → 居家日常、生活记录、街拍随拍、居家环境
-- 亲子育儿 → 宝宝成长、亲子互动、儿童活动、校园生活
-- 人物肖像 → 个人照、情侣照、全家福、朋友合影、自拍
 - ...（详见配置文件）
 
 属性标签（Attributes）- 时间、天气、季节等：
 - 时间：白天、夜晚、黄昏
-- 天气：晴天、阴天、雨天
-- 季节：春季、夏季、秋季、冬季
+- ...（详见配置文件）
 
 配置文件：
 - 位置：src/config/hierarchical_tags.json

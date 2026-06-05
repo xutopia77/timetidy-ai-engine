@@ -178,10 +178,8 @@ class FAISSIndexManager:
             return False
         
         try:
-            print(f"Saving FAISS index to {self.index_file}...", file=sys.stderr)
             faiss.write_index(self.index, str(self.index_file))
             
-            print(f"Saving metadata to {self.metadata_file}...", file=sys.stderr)
             with open(self.metadata_file, "w", encoding="utf-8") as f:
                 json.dump(self.metadata, f, indent=2, ensure_ascii=False)
             
@@ -194,9 +192,7 @@ class FAISSIndexManager:
             }
             
             with open(self.config_file, "w", encoding="utf-8") as f:
-                json.dump(config, f, indent=2)
-            
-            print(f"Index saved successfully", file=sys.stderr)
+                json.dump(config, f, indent=2)            
             return True
             
         except Exception as e:

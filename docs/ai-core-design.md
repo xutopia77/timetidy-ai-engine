@@ -475,7 +475,6 @@ Python处理流程：
        ],
        "attribute_tags": [
          {"id": "daytime", "name": "白天", "confidence": 0.90, "level": "attribute", "type": "time"},
-         {"id": "sunny", "name": "晴天", "confidence": 0.85, "level": "attribute", "type": "weather"},
          {"id": "summer", "name": "夏季", "confidence": 0.78, "level": "attribute", "type": "season"}
        ]
        "process_time_ms": 50
@@ -485,7 +484,7 @@ Python处理流程：
 - classify_hierarchical: 分层分类（与generate_tags类似）
 ```
 
-**配置文件说明：**
+**配置文件说明version 2.0：**
 
 ```
 配置文件路径：src/config/hierarchical_tags.json
@@ -549,23 +548,112 @@ Python处理流程：
 - 可以调整阈值和top_k参数
 ```
 
-**优势对比：**
+**配置文件说明version 3.0：**
+```
+{
+  "version": "3.0",
+  "description": "Hierarchical tag configuration for family photo album (Chinese-CLIP optimized v3.0)",
+  "update_time": "2026-06-05",
+  "level1_categories": [
+    {
+      "id": "parenting",
+      "name": "亲子育儿",
+      "prompts": [
+        "宝宝的笑脸照片",
+        "孩子在玩耍的照片",
+        "孩子睡觉的照片"
+      ],
+      "negative_prompts": [
+        "只有大人的照片",
+        "纯物品照片"
+      ]
+    }
+  ],
+  "level2_categories": {
+    "parenting": [
+      {
+        "id": "baby_growth",
+        "name": "宝宝成长",
+        "prompts": [
+          "宝宝刚出生的照片",
+          "宝宝满月的照片",
+          "宝宝第一次说话的照片"
+        ],
+        "negative_prompts": [
+          "有大人的照片",
+          "聚会照片"
+        ]
+      },
+      {
+        "id": "parent_child",
+        "name": "亲子互动",
+        "prompts": [
+          "父母和孩子一起玩耍的照片",
+          "亲子游戏的照片"
+        ],
+        "negative_prompts": [
+          "只有孩子的照片",
+          "纯美食照片"
+        ]
+      }
+    ]
+  },
+  "attribute_categories": {
+    "time": [
+      {
+        "id": "early_morning",
+        "name": "清晨",
+        "prompts": [
+          "清晨拍摄的照片",
+          "天刚亮的照片"
+        ]
+      },
+      {
+        "id": "daytime",
+        "name": "白天",
+        "prompts": [
+          "白天拍摄的照片",
+          "下午的照片"
+        ]
+      }
+    ]
+  },
+  "settings": {
+    "level1_threshold": 0.22,
+    "level2_threshold": 0.18,
+    "attribute_threshold": 0.20,
+    "top_k_level1": 1,
+    "top_k_level2": 2,
+    "top_k_attributes": 3,
+    "use_multiple_prompts": true,
+    "average_prompt_embeddings": true,
+    "enable_negative_prompts": true,
+    "hierarchical_filtering": true,
+    "confidence_weighting": true,
+    "conflict_resolution_priority": [
+      "parenting",
+      "celebration",
+      "travel",
+      "daily_life",
+      "portrait",
+      "food",
+      "pet",
+      "landscape",
+      "hobby",
+      "objects",
+      "transport",
+      "other"
+    ]
+  }
+}
+
+- 负向 Prompt 机制
+- hierarchical_filtering会确保只有一级分类命中后才计算其下的二级标签，彻底解决跨分类重叠问题
+- conflict_resolution_priority定义了分类优先级，当两个分类相似度接近时自动选择高优先级的分类
 
 ```
-旧方案（分类+标签分离）：
-✗ 两个独立引擎，代码重复
-✗ 需要两次计算，性能较低
-✗ 分类和标签逻辑分离，不够清晰
-✗ 维护成本高
 
-新方案（分层标签统一）：
-✓ 一个引擎，代码简洁
-✓ 一次计算，性能优化
-✓ 分层体系，逻辑清晰
-✓ 易于维护和扩展
-✓ 用户可自定义标签体系
-✓ 支持多提示词提高准确度
-```
+
 
 #### 2.3 图片相似度搜索功能（SimilarityEngine）
 

@@ -74,9 +74,6 @@ class ProgressManager:
         try:
             with open(self.progress_file, "r", encoding="utf-8") as f:
                 progress_data = json.load(f)
-            
-            print(f"Progress file loaded: {len(progress_data.get('files', []))} files", file=sys.stderr)
-            
             return progress_data
         
         except json.JSONDecodeError as e:
@@ -97,10 +94,8 @@ class ProgressManager:
         
         try:
             progress_data["last_update_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            
             with open(self.progress_file, "w", encoding="utf-8") as f:
                 json.dump(progress_data, f, indent=2, ensure_ascii=False)
-            
             print(f"Progress file saved: {processed_files} processed, {pending_files} pending, {total_files} total", file=sys.stderr)
         
         except Exception as e:

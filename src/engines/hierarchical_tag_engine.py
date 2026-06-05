@@ -290,8 +290,23 @@ class HierarchicalTagEngine(BaseEngine):
             tag_level: Tag level to generate ("level1", "level2", "attributes", "all")
         
         Returns:
-            Hierarchical tag results
+            Hierarchical tag results with protocol format:
+            {
+                "data": {
+                    "tags": [{"label": "tag_name", "confidence": 0.92}, ...]
+                },
+                "data_dbg": {
+                    "primary_category": {...},
+                    "level1_tags": [...],
+                    "level2_tags": [...],
+                    "attribute_tags": [...],
+                    "process_time_ms": 50
+                }
+            }
         """
+        import time
+        start_time = time.time()
+        
         settings = self._config.get("settings", {})
         level1_threshold = settings.get("level1_threshold", 0.25)
         level2_threshold = settings.get("level2_threshold", 0.20)
@@ -305,17 +320,13 @@ class HierarchicalTagEngine(BaseEngine):
         
         print(f"Image vector shape: {image_vector.shape}", file=sys.stderr)
         
-        result = {
+        data_dbg = {
             "file_path": str(file_path),
             "record_id": record_id,
         }
         
         if tag_level in ["all", "level1"]:
             level1_candidates = self.classify_level1(image_vector)
-            
-            print(f"Level1 candidates (Top-{self._top_k}):", file=sys.stderr)
-            for i, candidate in enumerate(level1_candidates, 1):
-                print(f"  {i}. {candidate['name']}: score={candidate['score']:.4f} (threshold={level1_threshold})", file=sys.stderr)
             
             level1_tags = []
             for candidate in level1_candidates:
@@ -327,18 +338,15 @@ class HierarchicalTagEngine(BaseEngine):
                         "level": 1,
                     })
             
-            print(f"Level1 tags after filtering: {len(level1_tags)} tags", file=sys.stderr)
-            result["level1_tags"] = level1_tags
+            data_dbg["level1_tags"] = level1_tags
             
             if level1_tags:
-                result["primary_category"] = level1_tags[0]
+                data_dbg["primary_category"] = level1_tags[0]
         
         if tag_level in ["all", "level2"]:
-            if result.get("primary_category"):
-                parent_id = result["primary_category"]["id"]
+            if data_dbg.get("primary_category"):
+                parent_id = data_dbg["primary_category"]["id"]
                 level2_result = self.classify_level2(image_vector, parent_id)
-                
-                print(f"Level2 result for parent '{parent_id}': {level2_result['name']}, score={level2_result['score']:.4f}", file=sys.stderr)
                 
                 level2_tags = []
                 if level2_result["score"] >= level2_threshold:
@@ -349,23 +357,16 @@ class HierarchicalTagEngine(BaseEngine):
                         "level": 2,
                         "parent_id": parent_id,
                     })
-                
-                print(f"Level2 tags after filtering: {len(level2_tags)} tags", file=sys.stderr)
-                result["level2_tags"] = level2_tags
+                data_dbg["level2_tags"] = level2_tags
             else:
                 print(f"No primary category, skipping level2", file=sys.stderr)
-                result["level2_tags"] = []
+                data_dbg["level2_tags"] = []
         
         if tag_level in ["all", "attributes"]:
             attributes = self.classify_attributes(image_vector)
             attribute_tags = []
             
-            print(f"Attributes:", file=sys.stderr)
             for attr_type, attr_results in attributes.items():
-                print(f"  {attr_type}:", file=sys.stderr)
-                for i, attr in enumerate(attr_results, 1):
-                    print(f"    {i}. {attr['name']}: score={attr['score']:.4f} (threshold={attribute_threshold})", file=sys.stderr)
-                
                 for attr in attr_results:
                     if attr["score"] >= attribute_threshold:
                         attribute_tags.append({
@@ -377,24 +378,35 @@ class HierarchicalTagEngine(BaseEngine):
                         })
             
             attribute_tags.sort(key=lambda x: x["confidence"], reverse=True)
-            print(f"Attribute tags after filtering: {len(attribute_tags)} tags", file=sys.stderr)
-            result["attribute_tags"] = attribute_tags
+            data_dbg["attribute_tags"] = attribute_tags
         
-        if tag_level == "all":
-            all_tags = []
-            if result.get("level1_tags"):
-                all_tags.extend(result["level1_tags"])
-            if result.get("level2_tags"):
-                all_tags.extend(result["level2_tags"])
-            if result.get("attribute_tags"):
-                all_tags.extend(result["attribute_tags"])
-            
-            all_tags.sort(key=lambda x: x["confidence"], reverse=True)
-            result["all_tags"] = all_tags
+        # Build simplified tags list for data.tags
+        all_tags = []
+        if data_dbg.get("level1_tags"):
+            all_tags.extend(data_dbg["level1_tags"])
+        if data_dbg.get("level2_tags"):
+            all_tags.extend(data_dbg["level2_tags"])
+        if data_dbg.get("attribute_tags"):
+            all_tags.extend(data_dbg["attribute_tags"])
         
-        print(f"Total tags generated: {len(result.get('all_tags', []))}", file=sys.stderr)
+        all_tags.sort(key=lambda x: x["confidence"], reverse=True)
         
-        return result
+        # Convert to simplified format for data.tags
+        tags = [{"label": tag["name"], "confidence": tag["confidence"]} for tag in all_tags]
+        
+        # Calculate process time
+        process_time_ms = int((time.time() - start_time) * 1000)
+        data_dbg["process_time_ms"] = process_time_ms
+        
+        print(f"Total tags generated: {len(tags)}, Process time: {process_time_ms}ms", file=sys.stderr)
+        
+        # Return protocol format
+        return {
+            "data": {
+                "tags": tags
+            },
+            "data_dbg": data_dbg
+        }
     
     def classify_hierarchical(self, file_path: str) -> Dict:
         """Full hierarchical classification

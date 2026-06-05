@@ -280,7 +280,6 @@ class IndexInitEngine(BaseEngine):
                 self.progress_manager.save_progress(progress_data)
                 self.index_manager.save_index()
                 break
-            
             if file_record.get("status") != "pending":
                 continue
             

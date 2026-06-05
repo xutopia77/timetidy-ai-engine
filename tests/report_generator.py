@@ -59,9 +59,10 @@ def generate_markdown_report(test_results: Dict, output_path: str, test_data_dir
     lines.append(f"| Search | {search_status} | {search_count} results in {query_time}ms |")
     
     tag_status = "✓ Pass" if tag_results.get("code") == 0 else "✗ Fail"
-    all_tags = tag_results.get("all_tags", [])
-    tag_count = len(all_tags)
-    lines.append(f"| Tag Detect | {tag_status} | Generated {tag_count} tags |")
+    success_count = tag_results.get("success_count", 0)
+    total_count = tag_results.get("total_count", 0)
+    total_tags = tag_results.get("total_tags", 0)
+    lines.append(f"| Tag Detect | {tag_status} | {success_count}/{total_count} images, {total_tags} tags |")
     
     sync_status = "✓ Pass" if sync_result.get("code") == 0 else "✗ Fail"
     processed_files = sync_result.get("data", {}).get("processed_files", 0)
@@ -156,80 +157,82 @@ def generate_markdown_report(test_results: Dict, output_path: str, test_data_dir
         lines.append("## Tag Detection Results")
         lines.append("")
         
-        file_path = tag_results.get("file_path", "")
-        level1_tags = tag_results.get("level1_tags", [])
-        level2_tags = tag_results.get("level2_tags", [])
-        attribute_tags = tag_results.get("attribute_tags", [])
-        all_tags = tag_results.get("all_tags", [])
+        success_count = tag_results.get("success_count", 0)
+        total_count = tag_results.get("total_count", 0)
+        total_tags = tag_results.get("total_tags", 0)
+        results_list = tag_results.get("results", [])
         
-        if file_path:
-            lines.append(f"### Image: {Path(file_path).name}")
-            lines.append("")
-            
-            md_file_dir = Path(output_path).parent
-            rel_path = get_relative_path(Path(file_path), md_file_dir)
-            
-            lines.append(f"![{Path(file_path).name}]({rel_path})")
-            lines.append("")
-        
-        total_tags = len(all_tags)
-        lines.append(f"**Generated {total_tags} tags**:")
+        lines.append(f"**Summary**: {success_count}/{total_count} images processed, {total_tags} tags generated")
         lines.append("")
         
-        if level1_tags:
-            lines.append("#### Level 1 - Primary Category")
-            lines.append("")
-            lines.append("| Category | Confidence |")
-            lines.append("|----------|------------|")
-            
-            for tag in level1_tags[:3]:
-                name = tag.get("name", "")
-                confidence = tag.get("confidence", 0.0)
-                lines.append(f"| {name} | {confidence:.4f} |")
-            
-            lines.append("")
+        md_file_dir = Path(output_path).parent
         
-        if level2_tags:
-            lines.append("#### Level 2 - Sub-category")
-            lines.append("")
-            lines.append("| Sub-category | Confidence | Parent |")
-            lines.append("|--------------|------------|--------|")
+        for idx, result in enumerate(results_list, 1):
+            file_path = result.get("file_path", "")
+            result_code = result.get("code", 1)
             
-            for tag in level2_tags[:5]:
-                name = tag.get("name", "")
-                confidence = tag.get("confidence", 0.0)
-                parent = tag.get("parent_id", "")
-                lines.append(f"| {name} | {confidence:.4f} | {parent} |")
-            
-            lines.append("")
-        
-        if attribute_tags:
-            lines.append("#### Attributes")
-            lines.append("")
-            lines.append("| Attribute | Confidence | Type |")
-            lines.append("|-----------|------------|------|")
-            
-            for tag in attribute_tags[:5]:
-                name = tag.get("name", "")
-                confidence = tag.get("confidence", 0.0)
-                attr_type = tag.get("type", "")
-                lines.append(f"| {name} | {confidence:.4f} | {attr_type} |")
-            
-            lines.append("")
-        
-        if all_tags:
-            lines.append("#### All Tags (Sorted by Confidence)")
-            lines.append("")
-            lines.append("| Tag | Level | Confidence |")
-            lines.append("|-----|-------|------------|")
-            
-            for tag in all_tags[:10]:
-                name = tag.get("name", "")
-                level = tag.get("level", "")
-                confidence = tag.get("confidence", 0.0)
-                lines.append(f"| {name} | {level} | {confidence:.4f} |")
-            
-            lines.append("")
+            if result_code == 0:
+                tags = result.get("tags", [])
+                level1_tags = result.get("level1_tags", [])
+                level2_tags = result.get("level2_tags", [])
+                attribute_tags = result.get("attribute_tags", [])
+                process_time_ms = result.get("process_time_ms", 0)
+                
+                lines.append(f"### Image {idx}: {Path(file_path).name}")
+                lines.append("")
+                
+                if file_path:
+                    rel_path = get_relative_path(Path(file_path), md_file_dir)
+                    lines.append(f"<img src=\"{rel_path}\" width=\"25%\">")
+                    lines.append("")
+                
+                tag_count = len(tags)
+                lines.append("```")
+                lines.append(f"**Generated {tag_count} tags in {process_time_ms}ms**:")
+                lines.append("")
+                
+                # Show simplified tags
+                if tags:
+                    lines.append("**Tags**")
+                    lines.append("")
+                    for tag in tags[:10]:
+                        label = tag.get("label", "")
+                        confidence = tag.get("confidence", 0.0)
+                        lines.append(f"- {label} (confidence: {confidence:.4f})")
+                
+                if level1_tags:
+                    lines.append("**Level 1 - Primary Category**")
+                    for tag in level1_tags[:3]:
+                        name = tag.get("name", "")
+                        confidence = tag.get("confidence", 0.0)
+                        lines.append(f"- confidence:{confidence:.4f}, Category:{name}")
+                    lines.append("")
+                
+                if level2_tags:
+                    lines.append("**Level 2 - Sub-category**")
+                    for tag in level2_tags[:5]:
+                        name = tag.get("name", "")
+                        confidence = tag.get("confidence", 0.0)
+                        parent = tag.get("parent_id", "")
+                        lines.append(f"- Confidence:{confidence:.4f}, Parent:{parent}, Sub-category:{name}")
+                    lines.append("")
+                
+                if attribute_tags:
+                    lines.append("**Attributes**")
+                    for tag in attribute_tags[:5]:
+                        name = tag.get("name", "")
+                        confidence = tag.get("confidence", 0.0)
+                        attr_type = tag.get("type", "")
+                        lines.append(f"- Confidence:{confidence:.4f}, Type:{attr_type}, Attribute:{name}")
+                lines.append("```")
+                lines.append("")
+            else:
+                lines.append(f"### Image {idx}: {Path(file_path).name}")
+                lines.append("")
+                lines.append(f"**Status**: ✗ Failed - {result.get('status', 'Unknown error')}")
+                lines.append("")
+                lines.append("---")
+                lines.append("")
     
     if sync_result.get("code") == 0:
         lines.append("## Data Synchronization")

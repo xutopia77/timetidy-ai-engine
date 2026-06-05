@@ -160,39 +160,31 @@ def main():
     print("\n" + "="*80)
     print("AI Engine stdio Communication Test (File Hash Based)")
     print("="*80)
-    
+    # ===test setup 
     project_root = Path(__file__).parent.parent
-    
     test_data_dir = args.test_dir
     if not os.path.exists(test_data_dir):
         print(f"\n✗ Test data directory not found: {test_data_dir}")
         return
-    
     print(f"\nTest directory: {test_data_dir}")
     
     image_files = find_image_files(test_data_dir)
-    
     if not image_files:
         print(f"\n✗ No image files found in: {test_data_dir}")
         return
-    
     total_found = len(image_files)
     image_files = image_files[:args.max_images]
-    
     print(f"Found {total_found} images, using {len(image_files)} for testing")
-    
+    # === start python process
     process = PythonProcess()
-    
     if not process.start():
         print("\n✗ Failed to start Python process")
         return
-    
     test_results = {}
-    
     print("\n" + "-"*80)
     print("Test 1: Ping Communication")
     print("-"*80)
-    # test ping =========================================================== 
+    # === test ping 
     ping_response = process.send_request("ping", {})
     
     if ping_response and ping_response.get("code") == 0:
@@ -208,56 +200,41 @@ def main():
             "code": 1,
             "status": str(ping_response) if ping_response else "No response",
         }
-    
+    # test index init  
     print("\n" + "-"*80)
     print("Test 2: Index Initialization (File Hash Based)")
     print("-"*80)
-
-    # test index init =========================================================== 
     print("Step 1: Simulate Go creating process_file.json...")
     
     progress_dir = project_root / "ai-data" / "progress"
     progress_dir.mkdir(parents=True, exist_ok=True)
     process_file_path = progress_dir / "process_file.json"
-    
     process_file_data, record_id_to_path = create_process_file(
         image_files,
         start_id=1001,
         output_path=str(process_file_path)
     )
-    
-    print(f"  - Created process_file.json with {len(image_files)} files")
-    print(f"  - All files status: pending")
-    print(f"  - Each file has unique file_hash")
-    
+    print(f"  - Created process_file.json with {len(image_files)} files,All files status: pending")
     print("\nStep 2: Send start request to Python...")
     
     start_params = {
         "cmd": "start",
         "rebuild": True
     }
-    
     start_response = process.send_request("index_init", start_params, timeout=300.0)
-    
     if start_response and start_response.get("code") == 0:
         start_data = start_response.get("data", {})
-        
-        print(f"✓ Index build started")
-        print(f"  - Total files: {start_data.get('total_files', 0)}")
-        print(f"  - Status: {start_data.get('status', '')}")
-        
+        print(f"✓ Index build started, Total files: {start_data.get('total_files', 0)}, Status: {start_data.get('status', '')}")
         print("\nStep 3: Monitor build progress...")
         
         max_wait_time = 300
         start_time = time.time()
-        
         while time.time() - start_time < max_wait_time:
             progress_params = {
                 "cmd": "get_progress"
             }
             
             progress_response = process.send_request("index_init", progress_params)
-            
             if progress_response and progress_response.get("code") == 0:
                 progress_data = progress_response.get("data", {})
                 
@@ -266,9 +243,7 @@ def main():
                 skipped = progress_data.get("skipped_files", 0)
                 total = progress_data.get("total_files", 0)
                 percent = progress_data.get("progress_percent", 0.0)
-
                 print(f"Progress: {processed + skipped}/{total} ({percent:.1f}%), Processed: {processed}, Skipped: {skipped}")
-                
                 if status == "completed":
                     print(f"✓ Index build completed")
                     
@@ -287,7 +262,6 @@ def main():
                         "record_id_to_path": record_id_to_path
                     }
                     break
-                
                 time.sleep(2)
             else:
                 print("✗ Failed to get progress")
@@ -309,30 +283,18 @@ def main():
             "status": error
         }
     
+    # === test search
     print("\n" + "-"*80)
     print("Test 3: Text-to-Image Search")
     print("-"*80)
-    
     if test_results.get("index_init", {}).get("code") == 0:
-        # search_params = {
-        #     "action": "search",
-        #     "query": args.search_query,
-        #     "top_k": args.top_k,
-        #     "filters": {}
-        # }
-        
         search_params = {
             "cmd": "search",
             "query": args.search_query,
             "top_k": 20
         }
-
-        print(f"Query: \"{args.search_query}\"")
-        print(f"Searching in indexed images...")
-        
-        # test search =========================================================== 
+        print(f"Query: \"{args.search_query}\", Top-K: 20, Searching in indexed images...")
         search_response = process.send_request("search", search_params, timeout=30.0)
-        
         if search_response and search_response.get("code") == 0:
             search_data = search_response.get("data", {})
             results = search_data.get("results", [])
@@ -340,8 +302,7 @@ def main():
             
             record_id_to_path = test_results.get("index_init", {}).get("record_id_to_path", {})
             
-            print(f"✓ Search successful, found {len(results)} results")
-            print(f"  - Query time: {query_time}ms")
+            print(f"✓ Search successful, found {len(results)} results, Query time: {query_time}ms")
             
             for i, result in enumerate(results, 1):
                 record_id = result.get("record_id")
@@ -349,7 +310,7 @@ def main():
                 rank = result.get("rank")
                 image_path = record_id_to_path.get(record_id, "")
                 image_name = Path(image_path).name if image_path else f"ID_{record_id}"
-                print(f"    {i}. {image_name} (ID: {record_id}, similarity: {similarity:.4f}, rank: {rank})")
+                print(f"    {i}. rank: {rank}, similarity: {similarity:.4f}, ID: {record_id}, {image_name}")
             
             test_results["search"] = {
                 "code": 0,
@@ -363,7 +324,6 @@ def main():
             print("✗ Search failed")
             error = search_response.get("status", "Unknown error") if search_response else "No response"
             print(f"  - Error: {error}")
-            
             test_results["search"] = {
                 "code": 1,
                 "status": error,
@@ -376,74 +336,77 @@ def main():
             "status": "Index not initialized",
             "query": args.search_query
         }
-    
+
+    # === test tag detect      
     print("\n" + "-"*80)
     print("Test 4: Tag Detection")
     print("-"*80)
-    
-    # test tag detect =========================================================== 
     if image_files:
-        test_image = image_files[0]
-        print(f"Testing image: {Path(test_image).name}")
+        tag_results_list = []
+        success_count = 0
+        total_tags_count = 0
         
-        tag_params = {
-            "cmd": "generate_tags",
-            "file_path": test_image,
-            "tag_level": "all"
-        }
-        
-        tag_response = process.send_request("tag_detect", tag_params)
-        
-        if tag_response and tag_response.get("code") == 0:
-            tag_data = tag_response.get("data", {})
-            
-            level1_tags = tag_data.get("level1_tags", [])
-            level2_tags = tag_data.get("level2_tags", [])
-            attribute_tags = tag_data.get("attribute_tags", [])
-            all_tags = tag_data.get("all_tags", [])
-            
-            total_tags = len(all_tags)
-            print(f"✓ Tag detection successful, generated {total_tags} tags")
-            
-            if level1_tags:
-                print(f"\n  Level 1 (Primary Category):")
-                for tag in level1_tags[:3]:
-                    name = tag.get("name", "")
-                    confidence = tag.get("confidence", 0.0)
-                    print(f"    - {name} (confidence: {confidence:.4f})")
-            
-            if level2_tags:
-                print(f"\n  Level 2 (Sub-category):")
-                for tag in level2_tags[:5]:
-                    name = tag.get("name", "")
-                    confidence = tag.get("confidence", 0.0)
-                    parent = tag.get("parent_id", "")
-                    print(f"    - {name} (confidence: {confidence:.4f}, parent: {parent})")
-            
-            if attribute_tags:
-                print(f"\n  Attributes:")
-                for tag in attribute_tags[:5]:
-                    name = tag.get("name", "")
-                    confidence = tag.get("confidence", 0.0)
-                    attr_type = tag.get("type", "")
-                    print(f"    - {name} (confidence: {confidence:.4f}, type: {attr_type})")
-            
-            test_results["tag_detect"] = {
-                "code": 0,
-                "status": "success",
+        for i, test_image in enumerate(image_files, 1):
+            print(f"\n[{i}/{len(image_files)}] Testing image: {Path(test_image).name}")
+            tag_params = {
+                "cmd": "generate_tags",
                 "file_path": test_image,
-                "level1_tags": level1_tags,
-                "level2_tags": level2_tags,
-                "attribute_tags": attribute_tags,
-                "all_tags": all_tags
+                "tag_level": "all"
             }
-        else:
-            print("✗ Tag detection failed")
-            test_results["tag_detect"] = {
-                "code": 1,
-                "status": "Tag detection failed",
-                "file_path": test_image
-            }
+            tag_response = process.send_request("tag_detect", tag_params)
+            
+            if tag_response and tag_response.get("code") == 0:
+                tag_data = tag_response.get("data", {})
+                tag_data_dbg = tag_response.get("data_dbg", {})
+                
+                tags = tag_data.get("tags", [])
+                level1_tags = tag_data_dbg.get("level1_tags", [])
+                level2_tags = tag_data_dbg.get("level2_tags", [])
+                attribute_tags = tag_data_dbg.get("attribute_tags", [])
+                process_time_ms = tag_data_dbg.get("process_time_ms", 0)
+                
+                total_tags = len(tags)
+                total_tags_count += total_tags
+                success_count += 1
+                print(f"  ✓ Generated {total_tags} tags in {process_time_ms}ms")
+                
+                if level1_tags:
+                    print(f"    Level 1: {', '.join([tag.get('name', '') for tag in level1_tags[:3]])}")
+                
+                tag_results_list.append({
+                    "code": 0,
+                    "status": "success",
+                    "file_path": test_image,
+                    "tags": tags,
+                    "level1_tags": level1_tags,
+                    "level2_tags": level2_tags,
+                    "attribute_tags": attribute_tags,
+                    "process_time_ms": process_time_ms
+                })
+            else:
+                print(f"  ✗ Tag detection failed")
+                tag_results_list.append({
+                    "code": 1,
+                    "status": "Tag detection failed",
+                    "file_path": test_image
+                })
+        
+        print(f"\n{'='*60}")
+        print(f"Tag Detection Summary:")
+        print(f"  - Total images: {len(image_files)}")
+        print(f"  - Successful: {success_count}")
+        print(f"  - Failed: {len(image_files) - success_count}")
+        print(f"  - Total tags generated: {total_tags_count}")
+        print(f"{'='*60}")
+        
+        test_results["tag_detect"] = {
+            "code": 0 if success_count > 0 else 1,
+            "status": "success" if success_count > 0 else "All tag detections failed",
+            "results": tag_results_list,
+            "success_count": success_count,
+            "total_count": len(image_files),
+            "total_tags": total_tags_count
+        }
     
     print("\n" + "-"*80)
     print("Test 5: Data Synchronization (File Hash Based)")
@@ -516,7 +479,7 @@ def main():
     
     if test_results.get("index_init", {}).get("code") == 0:
         print("Step 1: Find similar images by record_id...")
-        # test find similar =========================================================== 
+        # test find similar  
         find_similar_params = {
             "cmd": "find_similar",
             "record_id": 1001,
@@ -574,7 +537,7 @@ def main():
     
     if test_results.get("index_init", {}).get("code") == 0:
         print("Step 1: Detect similar groups across all images...")
-        # test detect similar groups =========================================================== 
+        # test detect similar groups  
         detect_groups_params = {
             "cmd": "detect_similar_groups",
             "min_similarity": 0.85,

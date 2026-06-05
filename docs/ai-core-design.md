@@ -160,7 +160,7 @@
 | index_init | 索引初始化 | start、stop、continue、get_progress、get_status |
 | sync | 数据同步 | sync_all、get_status |
 | tag_detect | 标签检测 | generate_tags、classify_hierarchical |
-| find_similar | 相似图搜索 | find_similar、batch_find_similar、detect_similar_groups |
+| find_similar | 相似图搜索 | find_similar、detect_similar_groups |
 | ping | 通信测试 | 无 |
 
 优势：
@@ -339,8 +339,7 @@ SearchEngine（搜索引擎）
 └── get_status           → 获取引擎状态
 
 SimilarityEngine（相似度引擎）
-├── find_similar           → 图搜图（图片在索引中，默认场景）
-├── batch_find_similar     → 批量图搜图
+├── find_similar           → 图搜图（支持批量）
 └── detect_similar_groups  → 全相册相似检测（N-to-N）
 
 结论：
@@ -577,14 +576,9 @@ SimilarityEngine 提供多种相似度搜索模式：
 
 ┌─────────────────────────────────────────────────────────────────┐
 │  find_similar（默认）                                            │
-│  - 输入：参考图片 record_id（图片已在索引中）                      │
+│  - 输入：参考图片 record_id 列表（支持批量）                       │
 │  - 流程：从索引获取向量 → FAISS搜索 → 返回结果                     │
-│  - 性能：~2-5ms                                                  │
-├─────────────────────────────────────────────────────────────────┤
-│  batch_find_similar                                             │
-│  - 输入：多个参考图片 record_id 列表                              │
-│  - 流程：批量从索引获取向量 → 批量FAISS搜索 → 返回结果              │
-│  - 性能：~5-10ms（批量优化）                                      │
+│  - 性能：~2-5ms（单个），~10-20ms（批量）                         │
 ├─────────────────────────────────────────────────────────────────┤
 │  detect_similar_groups                                          │
 │  - 输入：全相册图片                                              │
@@ -603,35 +597,6 @@ find_similar接口：
      "action": "find_similar",
      "data": {
        "cmd": "find_similar",  // 可选，默认为find_similar
-       "record_id": 1001,
-       "top_k": 10,
-       "min_similarity": 0.5
-     }
-   }
-
-2. 返回JSON响应：
-   {
-     "id": "1234567890",
-     "code": 0,
-     "status": "success",
-     "data": {
-       "similar_images": [
-         {"record_id": 1005, "similarity": 0.95, "rank": 1},
-         {"record_id": 1020, "similarity": 0.89, "rank": 2}
-       ]
-     },
-     "data_dbg": {
-       "query_time_ms": 3.2
-     }
-   }
-
-batch_find_similar接口：
-1. 接收JSON请求：
-   {
-     "id": "1234567890",
-     "action": "find_similar",
-     "data": {
-       "cmd": "batch_find_similar",
        "record_ids": [1001, 1002, 1003],
        "top_k": 10,
        "min_similarity": 0.5
@@ -647,16 +612,21 @@ batch_find_similar接口：
        "results": [
          {
            "reference_id": 1001,
-           "similar_images": [...]
+           "similar_images": [
+             {"record_id": 1005, "similarity": 0.95, "rank": 1},
+             {"record_id": 1020, "similarity": 0.89, "rank": 2}
+           ]
          },
          {
            "reference_id": 1002,
            "similar_images": [...]
          }
-       ]
+       ],
+       "total_time_ms": 15.0,
+       "batch_size": 3
      },
      "data_dbg": {
-       "total_time_ms": 10.5
+       "query_time_ms": 15.0
      }
    }
 
@@ -796,11 +766,6 @@ SimilarityEngine 提供多种相似度计算功能：
 │  - 流程：从索引获取向量 → FAISS搜索 → 返回结果                     │
 │  - 性能：~2-5ms                                                  │
 │  - 说明：等同于 SearchEngine.search_by_image                      │
-├─────────────────────────────────────────────────────────────────┤
-│  batch_find_similar（批量图搜图）                                 │
-│  - 输入：多个 record_id                                          │
-│  - 流程：批量获取向量 → 批量搜索 → 返回结果                        │
-│  - 性能：~10-20ms（批量优化）                                     │
 ├─────────────────────────────────────────────────────────────────┤
 │  detect_similar_groups（全相册相似检测）                          │
 │  - 输入：相册范围（全部或部分图片）                                │
@@ -1925,17 +1890,8 @@ func (p *PythonProcess) readStderr(stderr io.Reader) {
 目标：实现核心搜索功能
 任务：
 1. 实现FAISS索引管理（IndexIDMap2(IndexIVFFlat))
-2. 实现Python stdio通信服务
-3. 实现Go PythonProcess管理模块
-4. 实现文搜图功能（search action）
 5. 实现数据同步功能（sync action）
 6. 实现索引初始化功能（index_init action）
-
-验证点：
-- 搜索响应时间 <5ms
-- 索引构建成功
-- 数据同步正常
-- stdio通信稳定
 ```
 
 **阶段2: 扩展功能实现（2-4周）**
@@ -1943,7 +1899,6 @@ func (p *PythonProcess) readStderr(stderr io.Reader) {
 ```
 目标：实现其他AI功能
 任务：
-1. 实现图片分类功能（classify action）
 2. 实现标签生成功能（generate_tags action）
 3. 实现图片描述功能（generate_description action）
 4. 实现相似图片功能（find_similar action）

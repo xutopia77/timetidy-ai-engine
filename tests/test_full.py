@@ -704,16 +704,16 @@ def main():
     print("Test Summary")
     print("="*80)
     
-    print(f"\n✓ Ping: {test_results['ping'].get('success', False)}")
-    print(f"✓ Index Init: {test_results.get('index_init', {}).get('success', False)}")
-    print(f"✓ Search: {test_results.get('search', {}).get('success', False)}")
-    print(f"✓ Tag Detect: {test_results.get('tag_detect', {}).get('success', False)}")
-    print(f"✓ Sync All: {test_results.get('sync', {}).get('success', False)}")
-    print(f"✓ Find Similar: {test_results.get('find_similar', {}).get('success', False)}")
-    print(f"✓ Detect Similar Groups: {test_results.get('detect_similar_groups', {}).get('success', False)}")
+    print(f"\n✓ Ping: {test_results['ping'].get('code') == 0}")
+    print(f"✓ Index Init: {test_results.get('index_init', {}).get('code') == 0}")
+    print(f"✓ Search: {test_results.get('search', {}).get('code') == 0}")
+    print(f"✓ Tag Detect: {test_results.get('tag_detect', {}).get('code') == 0}")
+    print(f"✓ Sync All: {test_results.get('sync', {}).get('code') == 0}")
+    print(f"✓ Find Similar: {test_results.get('find_similar', {}).get('code') == 0}")
+    print(f"✓ Detect Similar Groups: {test_results.get('detect_similar_groups', {}).get('code') == 0}")
     
     detect_result = test_results.get('detect_similar_groups', {})
-    if detect_result.get('success'):
+    if detect_result.get('code') == 0:
         print(f"  - Groups: {detect_result.get('total_groups', 0)}, Pairs: {detect_result.get('total_similar_pairs', 0)}")
     
     print(f"\nReport generated: {md_path}")

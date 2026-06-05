@@ -89,9 +89,6 @@ class SimilarityEngine(BaseEngine):
         if cmd == "find_similar":
             return self._find_similar(params)
         
-        elif cmd == "batch_find_similar":
-            return self._batch_find_similar(params)
-        
         elif cmd == "detect_similar_groups":
             return self._detect_similar_groups(params)
         
@@ -103,84 +100,12 @@ class SimilarityEngine(BaseEngine):
     
     def _find_similar(self, params: dict) -> dict:
         """
-        Find similar images by reference image record_id
-        
-        Args:
-            params: {
-                "record_id": 1001,
-                "top_k": 10,
-                "min_similarity": 0.8
-            }
-        
-        Returns:
-            {
-                "reference_id": 1001,
-                "similar_images": [
-                    {"record_id": 1005, "similarity": 0.95, "rank": 1},
-                    {"record_id": 1020, "similarity": 0.89, "rank": 2}
-                ],
-                "query_time_ms": 3.2,
-                "total_count": 2
-            }
-        """
-        self._ensure_index_loaded()
-        
-        record_id = params.get("record_id")
-        if record_id is None:
-            raise ValueError("record_id is required")
-        
-        top_k = params.get("top_k", 10)
-        min_similarity = params.get("min_similarity", 0.0)
-        
-        start_time = time.time()
-        
-        reference_vector = self.index_manager.get_vector(record_id)
-        
-        if reference_vector is None:
-            return {
-                "reference_id": record_id,
-                "similar_images": [],
-                "query_time_ms": 0.0,
-                "total_count": 0,
-                "error": f"Reference image {record_id} not found in index"
-            }
-        
-        exclude_ids = [record_id]
-        
-        results = self.index_manager.search_by_vector(
-            reference_vector,
-            top_k=top_k + 5,
-            exclude_ids=exclude_ids
-        )
-        
-        filtered_results = []
-        for result in results:
-            if result["similarity"] >= min_similarity:
-                filtered_results.append(result)
-        
-        filtered_results = filtered_results[:top_k]
-        
-        query_time_ms = (time.time() - start_time) * 1000
-        
-        print(f"Found {len(filtered_results)} similar images for record {record_id} in {query_time_ms:.2f}ms", file=sys.stderr)
-        
-        return {
-            "reference_id": record_id,
-            "similar_images": filtered_results,
-            "query_time_ms": round(query_time_ms, 2),
-            "total_count": len(filtered_results),
-            "min_similarity": min_similarity,
-            "top_k": top_k
-        }
-    
-    def _batch_find_similar(self, params: dict) -> dict:
-        """
         Find similar images for multiple reference images
         
         Args:
             params: {
                 "record_ids": [1001, 1002, 1003],
-                "top_k": 5,
+                "top_k": 10,
                 "min_similarity": 0.8
             }
         
@@ -191,7 +116,8 @@ class SimilarityEngine(BaseEngine):
                     {"reference_id": 1002, "similar_images": [...]},
                     {"reference_id": 1003, "similar_images": [...]}
                 ],
-                "total_time_ms": 15.0
+                "total_time_ms": 15.0,
+                "batch_size": 3
             }
         """
         self._ensure_index_loaded()
@@ -200,26 +126,45 @@ class SimilarityEngine(BaseEngine):
         if not record_ids:
             raise ValueError("record_ids is required and must not be empty")
         
-        top_k = params.get("top_k", 5)
+        top_k = params.get("top_k", 10)
         min_similarity = params.get("min_similarity", 0.0)
         
         start_time = time.time()
-        
         batch_results = []
         
         for record_id in record_ids:
-            single_params = {
-                "record_id": record_id,
-                "top_k": top_k,
-                "min_similarity": min_similarity
-            }
+            reference_vector = self.index_manager.get_vector(record_id)
             
-            single_result = self._find_similar(single_params)
-            batch_results.append(single_result)
+            if reference_vector is None:
+                batch_results.append({
+                    "reference_id": record_id,
+                    "similar_images": [],
+                    "total_count": 0,
+                    "error": f"Reference image {record_id} not found in index"
+                })
+                continue
+            
+            exclude_ids = [record_id]
+            results = self.index_manager.search_by_vector(
+                reference_vector,
+                top_k=top_k + 5,
+                exclude_ids=exclude_ids
+            )
+            
+            filtered_results = [
+                r for r in results 
+                if r["similarity"] >= min_similarity
+            ][:top_k]
+            
+            batch_results.append({
+                "reference_id": record_id,
+                "similar_images": filtered_results,
+                "total_count": len(filtered_results)
+            })
         
         total_time_ms = (time.time() - start_time) * 1000
         
-        print(f"Batch similarity search completed for {len(record_ids)} images in {total_time_ms:.2f}ms", file=sys.stderr)
+        print(f"Found similar images for {len(record_ids)} references in {total_time_ms:.2f}ms", file=sys.stderr)
         
         return {
             "results": batch_results,

@@ -16,44 +16,7 @@
 
 ### ⚠️ 存在矛盾的部分
 
-**设计文档矛盾：**
 
-```
-第263行：如果图片不在索引中（外部图片），就返回错误，不再处理，降低项目复杂度。
-
-但是后面又保留了：
-- find_similar_by_image（图搜图，外部图片）
-- batch_find_similar（批量图搜图）
-```
-
-**代码实现：**
-- `similarity_engine.py` 中保留了 `find_similar_by_image` 和 `batch_find_similar` 的完整实现
-- `test_full.py` 中保留了相关测试
-
-### 🎯 优化建议（降低复杂度）
-
-#### 建议1：删除 `find_similar_by_image` 功能
-
-**理由：**
-- 设计文档明确说"如果图片不在索引中，就返回错误"
-- 外部图片场景很少见，可以要求用户先导入图片
-- 减少代码复杂度和维护成本
-
-**影响：**
-- 删除 `similarity_engine.py` 中的 `_find_similar_by_image` 方法（约100行）
-- 删除 `test_full.py` 中的相关测试（约50行）
-- 更新设计文档，删除相关描述
-
-#### 建议2：删除 `batch_find_similar` 功能
-
-**理由：**
-- 可以通过循环调用 `find_similar` 实现
-- 批量优化收益不大（10-20ms vs 多次调用）
-- 减少代码复杂度
-
-**影响：**
-- 删除 `similarity_engine.py` 中的 `_batch_find_similar` 方法（约100行）
-- 更新设计文档，删除相关描述
 
 #### 建议3：简化 `detect_similar_groups` 功能
 

@@ -57,6 +57,7 @@ class HierarchicalTagEngine(BaseEngine):
         self._attribute_categories = {}
         self._level1_vectors = None
         self._level1_prompt_counts = []
+        self._initialized = False  # Flag to avoid re-initialization
         
     def _get_default_config_path(self):
         script_dir = Path(__file__).parent.parent
@@ -117,9 +118,13 @@ class HierarchicalTagEngine(BaseEngine):
                 ))
     
     def _ensure_model(self):
+        if self._initialized:
+            return
+        
         self._search_engine._ensure_model()
         self._load_config()
         self._prepare_level1()
+        self._initialized = True
     
     def _prepare_level1(self):
         """Pre-encode level1 category prompts and negative prompts"""

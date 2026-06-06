@@ -105,30 +105,6 @@ Test results are saved in `test_results/` as markdown files with image previews:
 
 ## Usage Examples
 
-### Hierarchical Classification
-
-```python
-from engines.hierarchical_tag_engine import HierarchicalTagEngine
-
-engine = HierarchicalTagEngine(top_k=3)
-result = engine.process({
-    "action": "classify_hierarchical",
-    "file_path": "photo.jpg"
-})
-
-# Result structure:
-{
-    "level1": {"id": "travel", "name": "旅游出行", "score": 0.25},
-    "level2": {"id": "domestic_travel", "name": "国内游", "score": 0.22},
-    "attributes": {
-        "time": [{"id": "daytime", "name": "白天", "score": 0.18}],
-        "weather": [{"id": "sunny", "name": "晴天", "score": 0.15}],
-        "season": [{"id": "summer", "name": "夏季", "score": 0.12}]
-    },
-    "combined_score": 0.055
-}
-```
-
 ### Text-to-Image Search
 
 ```python

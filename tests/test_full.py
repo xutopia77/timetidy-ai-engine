@@ -345,6 +345,17 @@ def main():
     print("\n" + "-"*80)
     print("Test 4: Tag Detection")
     print("-"*80)
+    
+    # Build file_path to record_id mapping from process_file.json
+    file_to_record_id = {}
+    progress_dir = project_root / "ai-data" / "progress"
+    if process_file_path.exists():
+        with open(process_file_path, "r", encoding="utf-8") as f:
+            process_file_data = json.load(f)
+            for file_info in process_file_data.get("files", []):
+                file_to_record_id[file_info["file_path"]] = file_info["record_id"]
+        print(f"Loaded {len(file_to_record_id)} file-to-record_id mappings")
+    
     if image_files:
         tag_results_list = []
         success_count = 0
@@ -352,9 +363,21 @@ def main():
         
         for i, test_image in enumerate(image_files, 1):
             print(f"\n[{i}/{len(image_files)}] Testing image: {Path(test_image).name}")
+            
+            # Get record_id from mapping
+            record_id = file_to_record_id.get(test_image)
+            if record_id is None:
+                print(f"  ✗ Skipped (record_id not found in FAISS index)")
+                tag_results_list.append({
+                    "code": 1,
+                    "status": "record_id not found",
+                    "file_path": test_image
+                })
+                continue
+            
             tag_params = {
                 "cmd": "generate_tags",
-                "file_path": test_image,
+                "record_id": record_id,
                 "tag_level": "all"
             }
             tag_response = process.send_request("tag_detect", tag_params)

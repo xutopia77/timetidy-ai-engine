@@ -6,12 +6,6 @@ This engine provides:
 2. Top-K candidate strategy to avoid error propagation
 3. Multiple prompts per category for better stability
 4. Configurable hierarchical structure via JSON
-
-Usage:
-    result = engine.process({
-        "action": "classify_hierarchical",
-        "file_path": "photo.jpg"
-    })
 """
 
 import os
@@ -49,6 +43,7 @@ class Category:
 class HierarchicalTagEngine(BaseEngine):
     def __init__(self, config_path=None, top_k: int = 3):
         self._search_engine = SearchEngine()
+        self._faiss_manager = None  # FAISS index manager
         self._config = None
         self._config_path = config_path or self._get_default_config_path()
         self._cache_path = self._get_cache_path()
@@ -144,6 +139,35 @@ class HierarchicalTagEngine(BaseEngine):
         self._load_config()
         self._prepare_all_prompts()
         self._initialized = True
+    
+    def _ensure_faiss(self):
+        """Ensure FAISS index is loaded"""
+        if self._faiss_manager is None:
+            from engines.faiss_index_manager import FAISSIndexManager
+            self._faiss_manager = FAISSIndexManager()
+        
+        if not self._faiss_manager.is_loaded():
+            self._faiss_manager.load_index()
+    
+    def _get_vector_from_faiss(self, record_id: int) -> np.ndarray:
+        """Get image vector from FAISS index
+        
+        Args:
+            record_id: Record ID in FAISS index
+        
+        Returns:
+            Image vector (shape: (1024,))
+        
+        Raises:
+            ValueError: If vector not found in FAISS index
+        """
+        self._ensure_faiss()
+        
+        vector = self._faiss_manager.get_vector(record_id)
+        if vector is None:
+            raise ValueError(f"Vector not found in FAISS index for record_id: {record_id}")
+        
+        return vector.squeeze(0)  # (1, 1024) -> (1024,)
     
     def _is_cache_valid(self) -> bool:
         """Check if cache file is valid and up-to-date
@@ -446,14 +470,15 @@ class HierarchicalTagEngine(BaseEngine):
         
         return scores
     
-    def classify_level1(self, image_vector: np.ndarray) -> List[Dict]:
+    def classify_level1(self, image_vector: np.ndarray, limit_top_k: bool = True) -> List[Dict]:
         """Level1 classification with Top-K candidates
         
         Args:
             image_vector: Image feature vector
+            limit_top_k: Whether to limit results to top_k (default: True)
         
         Returns:
-            Top-K candidate list with id, name, score
+            Candidate list with id, name, score
         """
         settings = self._config.get("settings", {})
         top_k = settings.get("top_k_level1", self._top_k)
@@ -466,7 +491,9 @@ class HierarchicalTagEngine(BaseEngine):
             self._level1_neg_prompt_counts,
         )
         
-        sorted_indices = np.argsort(scores)[::-1][:top_k]
+        sorted_indices = np.argsort(scores)[::-1]
+        if limit_top_k:
+            sorted_indices = sorted_indices[:top_k]
         
         results = []
         for idx in sorted_indices:
@@ -482,21 +509,23 @@ class HierarchicalTagEngine(BaseEngine):
     def classify_level2(
         self, 
         image_vector: np.ndarray, 
-        level1_id: str
-    ) -> Dict:
+        level1_id: str,
+        limit_top_k: bool = True
+    ) -> List[Dict]:
         """Level2 classification within a level1 category
         
         Args:
             image_vector: Image feature vector
             level1_id: Level1 category ID
+            limit_top_k: Whether to limit results to top_k (default: True)
         
         Returns:
-            Best level2 category with id, name, score
+            Level2 category list with id, name, score
         """
         categories = self._level2_categories.get(level1_id, [])
         
         if not categories:
-            return {"id": "unknown", "name": "Unknown", "score": 0.0}
+            return []
         
         # Use cached vectors if available
         if level1_id in self._level2_cache:
@@ -523,7 +552,9 @@ class HierarchicalTagEngine(BaseEngine):
             neg_vectors, neg_prompt_counts,
         )
         
-        sorted_indices = np.argsort(scores)[::-1][:top_k_level2]
+        sorted_indices = np.argsort(scores)[::-1]
+        if limit_top_k:
+            sorted_indices = sorted_indices[:top_k_level2]
         
         results = []
         for idx in sorted_indices:
@@ -535,16 +566,14 @@ class HierarchicalTagEngine(BaseEngine):
                     "score": scores[idx],
                 })
         
-        if not results:
-            return {"id": "unknown", "name": "Unknown", "score": 0.0}
-        
-        return results[0]
+        return results
     
-    def classify_attributes(self, image_vector: np.ndarray) -> Dict[str, List[Dict]]:
+    def classify_attributes(self, image_vector: np.ndarray, limit_top_k: bool = True) -> Dict[str, List[Dict]]:
         """Attribute classification
         
         Args:
             image_vector: Image feature vector
+            limit_top_k: Whether to limit results to top_k (default: True)
         
         Returns:
             Attribute results for each type (time, weather, season, etc.)
@@ -577,7 +606,9 @@ class HierarchicalTagEngine(BaseEngine):
                 neg_vectors, neg_prompt_counts,
             )
             
-            sorted_indices = np.argsort(scores)[::-1][:top_k_attrs]
+            sorted_indices = np.argsort(scores)[::-1]
+            if limit_top_k:
+                sorted_indices = sorted_indices[:top_k_attrs]
             
             attr_results = []
             for idx in sorted_indices:
@@ -596,8 +627,8 @@ class HierarchicalTagEngine(BaseEngine):
         """Generate hierarchical tags for an image
         
         Args:
-            file_path: Image file path
-            record_id: Optional record ID
+            file_path: Image file path (used for logging only)
+            record_id: Record ID in FAISS index (required)
             tag_level: Tag level to generate ("level1", "level2", "attributes", "all")
         
         Returns:
@@ -607,37 +638,44 @@ class HierarchicalTagEngine(BaseEngine):
                     "tags": [{"label": "tag_name", "confidence": 0.92}, ...]
                 },
                 "data_dbg": {
-                    "primary_category": {...},
                     "level1_tags": [...],
                     "level2_tags": [...],
                     "attribute_tags": [...],
                     "process_time_ms": 50
                 }
             }
+        
+        Raises:
+            ValueError: If record_id is None or vector not found in FAISS
         """
         import time
         start_time = time.time()
+        
+        # Validate record_id
+        if record_id is None:
+            raise ValueError("record_id is required for tag generation (FAISS vector lookup)")
         
         settings = self._config.get("settings", {})
         level1_threshold = settings.get("level1_threshold", 0)
         level2_threshold = settings.get("level2_threshold", 0)
         attribute_threshold = settings.get("attribute_threshold", 0)
+        log.info(f"Thresholds: level1={level1_threshold}, level2={level2_threshold}, attributes={attribute_threshold}, Generating tags for record_id: {record_id}")
         
-        log.info(f"Generating tags for image: {file_path}")
-        log.info(f"Thresholds: level1={level1_threshold}, level2={level2_threshold}, attributes={attribute_threshold}")
-        
-        image_vector = self._search_engine.encode_image(file_path)
-        image_vector = image_vector.squeeze(0)
-        
+        # Get image vector from FAISS (fast lookup)
+        image_vector = self._get_vector_from_faiss(record_id)
         log.debug(f"Image vector shape: {image_vector.shape}")
         
         data_dbg = {
-            "file_path": str(file_path),
             "record_id": record_id,
         }
         
+        # Add file_path to debug data if provided
+        if file_path:
+            data_dbg["file_path"] = str(file_path)
+        
         if tag_level in ["all", "level1"]:
-            level1_candidates = self.classify_level1(image_vector)
+            # Get all level1 candidates (no top_k limit for debug data)
+            level1_candidates = self.classify_level1(image_vector, limit_top_k=False)
             
             level1_tags = []
             for candidate in level1_candidates:
@@ -651,32 +689,30 @@ class HierarchicalTagEngine(BaseEngine):
             
             data_dbg["level1_tags"] = level1_tags
             
-            if level1_tags:
-                data_dbg["primary_category"] = level1_tags[0]
-        
         if tag_level in ["all", "level2"]:
-            if data_dbg.get("primary_category"):
-                parent_id = data_dbg["primary_category"]["id"]
-                level2_result = self.classify_level2(image_vector, parent_id)
-                
+            if data_dbg.get("level1_tags"):
+                parent_id = data_dbg["level1_tags"][0]["id"]
+                # Get all level2 candidates (no top_k limit for debug data)
+                level2_results = self.classify_level2(image_vector, parent_id, limit_top_k=False)
                 level2_tags = []
-                if level2_result["score"] >= level2_threshold:
-                    level2_tags.append({
-                        "id": level2_result["id"],
-                        "name": level2_result["name"],
-                        "confidence": round(level2_result["score"], 4),
-                        "level": 2,
-                        "parent_id": parent_id,
-                    })
+                for result in level2_results:
+                    if result["score"] >= level2_threshold:
+                        level2_tags.append({
+                            "id": result["id"],
+                            "name": result["name"],
+                            "confidence": round(result["score"], 4),
+                            "level": 2,
+                            "parent_id": parent_id,
+                        })
                 data_dbg["level2_tags"] = level2_tags
             else:
                 log.warning("No primary category, skipping level2")
                 data_dbg["level2_tags"] = []
         
         if tag_level in ["all", "attributes"]:
-            attributes = self.classify_attributes(image_vector)
+            # Get all attribute candidates (no top_k limit for debug data)
+            attributes = self.classify_attributes(image_vector, limit_top_k=False)
             attribute_tags = []
-            
             for attr_type, attr_results in attributes.items():
                 for attr in attr_results:
                     if attr["score"] >= attribute_threshold:
@@ -692,13 +728,14 @@ class HierarchicalTagEngine(BaseEngine):
             data_dbg["attribute_tags"] = attribute_tags
         
         # Build simplified tags list for data.tags
+        # Only keep top-1 for level1 and level2, all for attributes
         all_tags = []
         if data_dbg.get("level1_tags"):
-            all_tags.extend(data_dbg["level1_tags"])
+            all_tags.append(data_dbg["level1_tags"][0])  # Only top-1
         if data_dbg.get("level2_tags"):
-            all_tags.extend(data_dbg["level2_tags"])
-        if data_dbg.get("attribute_tags"):
-            all_tags.extend(data_dbg["attribute_tags"])
+            all_tags.append(data_dbg["level2_tags"][0])  # Only top-1
+        if data_dbg.get("attribute_tags") and False:
+            all_tags.extend(data_dbg["attribute_tags"])  # All attributes
         
         all_tags.sort(key=lambda x: x["confidence"], reverse=True)
         
@@ -718,123 +755,19 @@ class HierarchicalTagEngine(BaseEngine):
             },
             "data_dbg": data_dbg
         }
-    
-    def classify_hierarchical(self, file_path: str) -> Dict:
-        """Full hierarchical classification
         
-        Strategy:
-        1. Level1 classification returns Top-K candidates
-        2. Level2 classification within each level1 candidate
-        3. Compute combined score = level1_score * level2_score
-        4. Select path with highest combined score
-        5. Attribute classification
-        
-        Args:
-            file_path: Image file path
-        
-        Returns:
-            Complete classification result
-        """
-        image_vector = self._search_engine.encode_image(file_path)
-        image_vector = image_vector.squeeze(0)  # Remove batch dimension: (1, 1024) -> (1024,)
-        
-        level1_candidates = self.classify_level1(image_vector)
-        
-        all_paths = []
-        for l1 in level1_candidates:
-            l2 = self.classify_level2(image_vector, l1["id"])
-            combined_score = l1["score"] * l2["score"]
-            all_paths.append({
-                "level1": l1,
-                "level2": l2,
-                "combined_score": combined_score,
-            })
-        
-        best_path = max(all_paths, key=lambda x: x["combined_score"])
-        all_paths_sorted = sorted(all_paths, key=lambda x: x["combined_score"], reverse=True)
-        
-        attributes = self.classify_attributes(image_vector)
-        
-        return {
-            "file_path": str(file_path),
-            "level1": best_path["level1"],
-            "level2": best_path["level2"],
-            "combined_score": best_path["combined_score"],
-            "attributes": attributes,
-            "all_candidates": all_paths_sorted,
-        }
-    
     def process(self, params: dict) -> dict:
         self._ensure_model()
-        
         cmd = params.get("cmd", "generate_tags")
-        
         if cmd == "generate_tags":
             file_path = params.get("file_path", "")
             record_id = params.get("record_id", None)
             tag_level = params.get("tag_level", "all")
             
-            if not file_path:
-                raise ValueError("file_path is required")
+            # Validate record_id (required for FAISS lookup)
+            if record_id is None:
+                raise ValueError("record_id is required for tag generation (FAISS vector lookup)")
             
             return self.generate_tags(file_path, record_id, tag_level)
-        
-        elif cmd == "classify_hierarchical":
-            file_path = params.get("file_path", "")
-            
-            if not file_path:
-                raise ValueError("file_path is required")
-            
-            return self.classify_hierarchical(file_path)
-        
-        elif cmd == "get_config":
-            return {
-                "config_path": str(self._config_path),
-                "version": self._config.get("version", "unknown"),
-                "level1_categories": [
-                    {"id": c.id, "name": c.name, "negative_prompts": c.negative_prompts}
-                    for c in self._level1_categories
-                ],
-                "level2_categories": {
-                    k: [
-                        {"id": c.id, "name": c.name, "negative_prompts": c.negative_prompts}
-                        for c in v
-                    ]
-                    for k, v in self._level2_categories.items()
-                },
-                "attribute_categories": {
-                    k: [
-                        {"id": c.id, "name": c.name, "negative_prompts": c.negative_prompts}
-                        for c in v
-                    ]
-                    for k, v in self._attribute_categories.items()
-                },
-                "settings": self._config.get("settings", {}),
-            }
-        
-        elif cmd == "get_available_tags":
-            return {
-                "level1_tags": [{"id": c.id, "name": c.name} for c in self._level1_categories],
-                "level2_tags": {
-                    k: [{"id": c.id, "name": c.name} for c in v] 
-                    for k, v in self._level2_categories.items()
-                },
-                "attribute_tags": {
-                    k: [{"id": c.id, "name": c.name} for c in v] 
-                    for k, v in self._attribute_categories.items()
-                },
-            }
-        
-        elif cmd == "reload_config":
-            self._config = None
-            self._level1_vectors = None
-            self._level1_neg_vectors = None
-            self._load_config()
-            self._prepare_level1()
-            return {
-                "message": "Configuration reloaded",
-                "config_path": str(self._config_path),
-            }
-        
         else:
             raise ValueError(f"Unknown cmd: {cmd}")

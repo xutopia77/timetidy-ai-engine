@@ -159,7 +159,7 @@
 | search | 文搜图、图搜图 | search、encode_image、encode_text、get_status |
 | index_init | 索引初始化 | start、stop、continue、get_progress、get_status |
 | sync | 数据同步 | sync_all、get_status |
-| tag_detect | 标签检测 | generate_tags、classify_hierarchical |
+| tag_detect | 标签检测 | generate_tags |
 | find_similar | 相似图搜索 | find_similar、detect_similar_groups |
 | ping | 通信测试 | 无 |
 
@@ -352,7 +352,8 @@ SimilarityEngine（相似度引擎）
 **功能需求：**
 
 用户输入：
-- 图片file_path（支持数组，一次处理多个文件）
+- **record_id（必需）**：图片在FAISS索引中的ID，用于获取图片向量
+- file_path（可选）：图片路径，仅用于日志记录
 - 标签层级选择（level1, level2, attributes, all）
 
 返回结果：
@@ -360,6 +361,10 @@ SimilarityEngine（相似度引擎）
   - 一级分类（旅游出行、日常生活、亲子育儿等）
   - 二级分类（国内游、出境游、周边游等）
   - 属性标签（白天、夜晚、晴天、春季等）
+
+性能特点：
+- **快速**：从FAISS获取图片向量（~1ms），不编码图片（~500ms）
+- **配置调优友好**：调整配置后无需重新编码图片，适合快速迭代
 
 **设计理念：**
 
@@ -406,24 +411,51 @@ SimilarityEngine（相似度引擎）
 **实现方案：**
 
 核心流程：
-1. Go发送标签生成请求（通过stdin）
-2. Python接收请求并提取图片特征（CLIP Vision Encoder）
-3. 计算图片特征与各层级标签文本特征的相似度
+1. Go发送标签生成请求（通过stdin，必须提供record_id）
+2. Python接收请求并从FAISS索引获取图片向量（~1ms）
+3. 计算图片向量与各层级标签文本向量的相似度
 4. Python返回分层结果（通过stdout）
 5. Go接收结果并处理
 
 关键设计：
+- **必须提供record_id**：从FAISS索引获取图片向量，不再编码图片
+- **性能优化**：图片向量获取从~500ms降至~1ms（提升500倍）
 - 从JSON配置文件加载标签体系
-- 标签文本特征预计算并缓存
-- 支持多提示词（average embedding）
-- 分层置信度阈值（level1: 0.25, level2: 0.20, attributes: 0.25）
+- 标签文本向量预计算并缓存（NPZ文件）
+- 支持正向和负向提示词（negative prompts）
+- 分层置信度阈值（level1: 0.22, level2: 0.18, attributes: 0.20）
 - 支持用户自定义标签库
 
 性能优化：
-- 标签文本特征预计算（一次性）
-- 图片特征复用（从FAISS索引获取）
-- 多提示词平均embedding提高准确度
+- **图片向量获取**：从FAISS索引获取（~1ms），不编码图片（~500ms）
+- 标签文本向量预计算并缓存（一次性，~10秒）
+- 支持正向和负向提示词机制
 - 批量标签生成支持
+
+**配置调优流程：**
+
+使用FAISS向量加速配置调优：
+
+```
+第一步：生成FAISS索引（一次性）
+    ↓
+耗时：~83分钟（1万张图片）
+    ↓
+第二步：调整配置文件（hierarchical_tags.json）
+    ↓
+第三步：批量测试（使用FAISS向量）
+    ↓
+耗时：~30秒（1万张图片）
+    ↓
+第四步：查看结果，分析问题
+    ↓
+重复步骤 2-4，直到满意
+```
+
+调优优势：
+- **第一次**：生成FAISS索引（编码所有图片）
+- **后续**：每次调整配置只需~30秒（1万张图片）
+- **节省时间**：假设迭代10次，从~14小时降至~88分钟
 
 **函数接口设计：**
 
@@ -435,14 +467,20 @@ Python处理流程：
      "action": "tag_detect",
      "data": {
        "cmd": "generate_tags",  // 可选，默认为generate_tags
-       "record_id": 1001,
-       "file_path": "/path/to/image.jpg",
-       "tag_level": "all",  // "level1", "level2", "attributes", "all"
-       "top_k_level1": 3,
-       "top_k_level2": 5,
-       "top_k_attributes": 2
+       "record_id": 1001,       // 必需，用于从FAISS获取图片向量
+       "file_path": "/path/to/image.jpg",  // 可选，仅用于日志
+       "tag_level": "all"       // "level1", "level2", "attributes", "all"
      }
    }
+
+参数说明：
+- record_id（必需）：图片在FAISS索引中的ID，用于获取图片向量
+- file_path（可选）：图片路径，仅用于日志记录
+- tag_level（可选）：标签层级，默认为"all"
+
+错误处理：
+- 如果 record_id 为 None：抛出 ValueError
+- 如果 record_id 在 FAISS 中不存在：抛出 ValueError
 
 2. 处理请求并返回JSON响应：
    {
@@ -480,8 +518,6 @@ Python处理流程：
        "process_time_ms": 50
      }
    }
-其他接口：
-- classify_hierarchical: 分层分类（与generate_tags类似）
 ```
 
 **配置文件说明version 2.0：**

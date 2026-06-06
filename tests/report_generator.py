@@ -194,12 +194,12 @@ def generate_markdown_report(test_results: Dict, output_path: str, test_data_dir
                 # Show simplified tags
                 if tags:
                     lines.append("**Tags**")
-                    lines.append("")
-                    for tag in tags[:10]:
+                    for tag in tags:
                         label = tag.get("label", "")
                         confidence = tag.get("confidence", 0.0)
-                        lines.append(f"- {label} (confidence: {confidence:.4f})")
-                
+                        lines.append(f"- confidence: {confidence:.4f} {label}")
+                    lines.append("")
+                    
                 if level1_tags:
                     lines.append("**Level 1 - Primary Category**")
                     for tag in level1_tags[:3]:

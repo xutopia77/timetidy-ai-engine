@@ -266,20 +266,16 @@ class HierarchicalTagEngine(BaseEngine):
         self._level1_vectors = self._encode_texts_batch(all_prompts)
         
         # Encode negative prompts for level1
-        settings = self._config.get("settings", {})
-        enable_negative = settings.get("enable_negative_prompts", True)
-        
         self._level1_neg_vectors = None
         self._level1_neg_prompt_counts = []
         
-        if enable_negative:
-            all_neg_prompts = []
-            for cat in self._level1_categories:
-                all_neg_prompts.extend(cat.negative_prompts)
-                self._level1_neg_prompt_counts.append(len(cat.negative_prompts))
-            
-            if all_neg_prompts:
-                self._level1_neg_vectors = self._encode_texts_batch(all_neg_prompts)
+        all_neg_prompts = []
+        for cat in self._level1_categories:
+            all_neg_prompts.extend(cat.negative_prompts)
+            self._level1_neg_prompt_counts.append(len(cat.negative_prompts))
+        
+        if all_neg_prompts:
+            self._level1_neg_vectors = self._encode_texts_batch(all_neg_prompts)
         
         log.info(
             f"Level1 prompts encoded: {len(all_prompts)} prompts,"
@@ -312,9 +308,6 @@ class HierarchicalTagEngine(BaseEngine):
         self._prepare_level1()
         
         # 2. Prepare level2 prompts for all level1 categories
-        settings = self._config.get("settings", {})
-        enable_negative = settings.get("enable_negative_prompts", True)
-        
         for level1_id, categories in self._level2_categories.items():
             if not categories:
                 continue
@@ -330,13 +323,12 @@ class HierarchicalTagEngine(BaseEngine):
             # Encode negative prompts
             neg_vectors = None
             neg_prompt_counts = []
-            if enable_negative:
-                all_neg_prompts = []
-                for cat in categories:
-                    all_neg_prompts.extend(cat.negative_prompts)
-                    neg_prompt_counts.append(len(cat.negative_prompts))
-                if all_neg_prompts:
-                    neg_vectors = self._encode_texts_batch(all_neg_prompts)
+            all_neg_prompts = []
+            for cat in categories:
+                all_neg_prompts.extend(cat.negative_prompts)
+                neg_prompt_counts.append(len(cat.negative_prompts))
+            if all_neg_prompts:
+                neg_vectors = self._encode_texts_batch(all_neg_prompts)
             
             self._level2_cache[level1_id] = (vectors, prompt_counts, neg_vectors, neg_prompt_counts)
         
@@ -356,13 +348,12 @@ class HierarchicalTagEngine(BaseEngine):
             # Encode negative prompts
             neg_vectors = None
             neg_prompt_counts = []
-            if enable_negative:
-                all_neg_prompts = []
-                for cat in categories:
-                    all_neg_prompts.extend(cat.negative_prompts)
-                    neg_prompt_counts.append(len(cat.negative_prompts))
-                if all_neg_prompts:
-                    neg_vectors = self._encode_texts_batch(all_neg_prompts)
+            all_neg_prompts = []
+            for cat in categories:
+                all_neg_prompts.extend(cat.negative_prompts)
+                neg_prompt_counts.append(len(cat.negative_prompts))
+            if all_neg_prompts:
+                neg_vectors = self._encode_texts_batch(all_neg_prompts)
             
             self._attribute_cache[attr_type] = (vectors, prompt_counts, neg_vectors, neg_prompt_counts)
         
@@ -430,8 +421,6 @@ class HierarchicalTagEngine(BaseEngine):
         Returns:
             List of adjusted similarity scores per category
         """
-        settings = self._config.get("settings", {})
-        enable_negative = settings.get("enable_negative_prompts", True)
         neg_weight = 0.5  # Weight for negative prompt penalty
         
         similarities = vectors @ image_vector
@@ -443,7 +432,7 @@ class HierarchicalTagEngine(BaseEngine):
             avg_score = float(similarities[start_idx:end_idx].mean())
             
             # Apply negative prompt penalty
-            if (enable_negative and neg_vectors is not None 
+            if (neg_vectors is not None 
                     and neg_prompt_counts is not None 
                     and neg_prompt_counts[i] > 0):
                 neg_start = sum(neg_prompt_counts[:i])
@@ -514,21 +503,17 @@ class HierarchicalTagEngine(BaseEngine):
             vectors, prompt_counts, neg_vectors, neg_prompt_counts = self._level2_cache[level1_id]
         else:
             # Fallback: encode on-the-fly (should not happen if initialized properly)
-            settings = self._config.get("settings", {})
-            enable_negative = settings.get("enable_negative_prompts", True)
-            
             vectors = self._encode_category_prompts(categories)
             prompt_counts = [len(cat.prompts) for cat in categories]
             
             neg_vectors = None
             neg_prompt_counts = []
-            if enable_negative:
-                all_neg_prompts = []
-                for cat in categories:
-                    all_neg_prompts.extend(cat.negative_prompts)
-                    neg_prompt_counts.append(len(cat.negative_prompts))
-                if all_neg_prompts:
-                    neg_vectors = self._encode_texts_batch(all_neg_prompts)
+            all_neg_prompts = []
+            for cat in categories:
+                all_neg_prompts.extend(cat.negative_prompts)
+                neg_prompt_counts.append(len(cat.negative_prompts))
+            if all_neg_prompts:
+                neg_vectors = self._encode_texts_batch(all_neg_prompts)
         
         settings = self._config.get("settings", {})
         top_k_level2 = settings.get("top_k_level2", 2)
@@ -575,20 +560,17 @@ class HierarchicalTagEngine(BaseEngine):
                 vectors, prompt_counts, neg_vectors, neg_prompt_counts = self._attribute_cache[attr_type]
             else:
                 # Fallback: encode on-the-fly (should not happen if initialized properly)
-                enable_negative = settings.get("enable_negative_prompts", True)
-                
                 vectors = self._encode_category_prompts(categories)
                 prompt_counts = [len(cat.prompts) for cat in categories]
                 
                 neg_vectors = None
                 neg_prompt_counts = []
-                if enable_negative:
-                    all_neg_prompts = []
-                    for cat in categories:
-                        all_neg_prompts.extend(cat.negative_prompts)
-                        neg_prompt_counts.append(len(cat.negative_prompts))
-                    if all_neg_prompts:
-                        neg_vectors = self._encode_texts_batch(all_neg_prompts)
+                all_neg_prompts = []
+                for cat in categories:
+                    all_neg_prompts.extend(cat.negative_prompts)
+                    neg_prompt_counts.append(len(cat.negative_prompts))
+                if all_neg_prompts:
+                    neg_vectors = self._encode_texts_batch(all_neg_prompts)
             
             scores = self._compute_category_scores(
                 image_vector, vectors, prompt_counts,
@@ -637,9 +619,9 @@ class HierarchicalTagEngine(BaseEngine):
         start_time = time.time()
         
         settings = self._config.get("settings", {})
-        level1_threshold = settings.get("level1_threshold", 0.22)
-        level2_threshold = settings.get("level2_threshold", 0.18)
-        attribute_threshold = settings.get("attribute_threshold", 0.20)
+        level1_threshold = settings.get("level1_threshold", 0)
+        level2_threshold = settings.get("level2_threshold", 0)
+        attribute_threshold = settings.get("attribute_threshold", 0)
         
         log.info(f"Generating tags for image: {file_path}")
         log.info(f"Thresholds: level1={level1_threshold}, level2={level2_threshold}, attributes={attribute_threshold}")

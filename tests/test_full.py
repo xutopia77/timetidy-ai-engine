@@ -482,11 +482,11 @@ def main():
     print("-"*80)
     
     if test_results.get("index_init", {}).get("code") == 0:
-        print("Step 1: Find similar images by record_id...")
+        print("Step 1: Find similar images by record_ids...")
         # test find similar  
         find_similar_params = {
             "cmd": "find_similar",
-            "record_id": 1001,
+            "record_ids": [1001],
             "top_k": args.top_k,
             "min_similarity": 0.5
         }
@@ -495,21 +495,29 @@ def main():
         
         if similar_response and similar_response.get("code") == 0:
             similar_data = similar_response.get("data", {})
-            similar_images = similar_data.get("similar_images", [])
-            query_time = similar_data.get("query_time_ms", 0)
+            results = similar_data.get("results", [])
+            query_time = similar_data.get("total_time_ms", 0)
+            batch_size = similar_data.get("batch_size", 0)
             
-            print(f"✓ Find similar successful, found {len(similar_images)} similar images")
+            print(f"✓ Find similar successful, processed {batch_size} reference(s)")
             print(f"  - Query time: {query_time}ms")
             
             record_id_to_path = test_results.get("index_init", {}).get("record_id_to_path", {})
             
-            for result in similar_images:
-                record_id = result.get("record_id")
-                similarity = result.get("similarity")
-                rank = result.get("rank")
-                image_path = record_id_to_path.get(record_id, "")
-                image_name = Path(image_path).name if image_path else f"ID_{record_id}"
-                print(f"    {rank}. {image_name} (ID: {record_id}, similarity: {similarity:.4f})")
+            for result in results:
+                reference_id = result.get("reference_id")
+                similar_images = result.get("similar_images", [])
+                total_count = result.get("total_count", 0)
+                
+                print(f"  Reference ID {reference_id}: found {total_count} similar images")
+                
+                for img in similar_images:
+                    record_id = img.get("record_id")
+                    similarity = img.get("similarity")
+                    rank = img.get("rank")
+                    image_path = record_id_to_path.get(record_id, "")
+                    image_name = Path(image_path).name if image_path else f"ID_{record_id}"
+                    print(f"    {rank}. {image_name} (ID: {record_id}, similarity: {similarity:.4f})")
             
             test_results["find_similar"] = {
                 "code": 0,

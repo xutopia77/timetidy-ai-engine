@@ -1307,30 +1307,11 @@
     ]
   },
   "settings": {
-    "level1_threshold": 0.22,
-    "level2_threshold": 0.18,
-    "attribute_threshold": 0.20,
+    "level1_threshold": 0,
+    "level2_threshold": 0,
+    "attribute_threshold": 0,
     "top_k_level1": 1,
     "top_k_level2": 2,
-    "top_k_attributes": 3,
-    "use_multiple_prompts": true,
-    "average_prompt_embeddings": true,
-    "enable_negative_prompts": true,
-    "hierarchical_filtering": true,
-    "confidence_weighting": true,
-    "conflict_resolution_priority": [
-      "parenting",
-      "celebration",
-      "travel",
-      "daily_life",
-      "portrait",
-      "food",
-      "pet",
-      "landscape",
-      "hobby",
-      "objects",
-      "transport",
-      "other"
-    ]
+    "top_k_attributes": 3
   }
 }

@@ -21,7 +21,6 @@ Performance:
 - detect_similar_groups: ~2-3s for 10,000 images
 """
 
-import sys
 import time
 import numpy as np
 from typing import Dict, List, Optional, Tuple, Set
@@ -29,6 +28,8 @@ from collections import defaultdict
 
 from engines.base import BaseEngine
 from engines.faiss_index_manager import FAISSIndexManager
+
+from utils.logger import log
 
 
 class UnionFind:
@@ -69,8 +70,8 @@ class SimilarityEngine(BaseEngine):
     def __init__(self):
         self.index_manager = FAISSIndexManager()
         
-        print(f"SimilarityEngine initialized:", file=sys.stderr)
-        print(f"  - FAISS index manager ready", file=sys.stderr)
+        log.info(f"SimilarityEngine initialized:")
+        log.info(f"  - FAISS index manager ready")
     
     def _ensure_index_loaded(self):
         if not self.index_manager.is_loaded():
@@ -164,7 +165,7 @@ class SimilarityEngine(BaseEngine):
         
         total_time_ms = (time.time() - start_time) * 1000
         
-        print(f"Found similar images for {len(record_ids)} references in {total_time_ms:.2f}ms", file=sys.stderr)
+        log.info(f"Found similar images for {len(record_ids)} references in {total_time_ms:.2f}ms")
         
         return {
             "results": batch_results,
@@ -229,7 +230,7 @@ class SimilarityEngine(BaseEngine):
                 "query_time_ms": 0.0
             }
         
-        print(f"Detecting similar groups for {len(target_ids)} images (min_similarity={min_similarity})...", file=sys.stderr)
+        log.info(f"Detecting similar groups for {len(target_ids)} images (min_similarity={min_similarity})...")
         
         id_to_index = {rid: i for i, rid in enumerate(target_ids)}
         index_to_id = {i: rid for i, rid in enumerate(target_ids)}
@@ -254,7 +255,7 @@ class SimilarityEngine(BaseEngine):
         
         vectors_array = np.array(vectors, dtype=np.float32)
         
-        print(f"  - Retrieved {len(vectors)} vectors from index", file=sys.stderr)
+        log.info(f"  - Retrieved {len(vectors)} vectors from index")
         
         search_start = time.time()
         all_pairs = []
@@ -300,7 +301,7 @@ class SimilarityEngine(BaseEngine):
                         all_pairs.append((query_idx, neighbor_idx, similarity))
         
         search_time_ms = (time.time() - search_start) * 1000
-        print(f"  - Found {len(all_pairs)} similar pairs in {search_time_ms:.2f}ms", file=sys.stderr)
+        log.info(f"  - Found {len(all_pairs)} similar pairs in {search_time_ms:.2f}ms")
         
         uf = UnionFind(len(valid_ids))
         for idx1, idx2, _ in all_pairs:
@@ -356,7 +357,7 @@ class SimilarityEngine(BaseEngine):
         
         query_time_ms = (time.time() - start_time) * 1000
         
-        print(f"  - Detected {len(groups)} similar groups in {query_time_ms:.2f}ms total", file=sys.stderr)
+        log.info(f"  - Detected {len(groups)} similar groups in {query_time_ms:.2f}ms total")
         
         return {
             "total_images": len(target_ids),

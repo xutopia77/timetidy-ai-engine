@@ -16,6 +16,8 @@ import onnxruntime as ort
 from engines.base import BaseEngine
 import config
 
+from utils.logger import log
+
 MODEL_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "models")
 
 CLIP_IMAGE_MEAN = np.array([0.48145466, 0.4578275, 0.40821073], dtype=np.float32)
@@ -32,9 +34,9 @@ class SearchEngine(BaseEngine):
         self._vision_model_path = os.path.join(MODEL_DIR, model_filenames["vision"])
         self._text_model_path = os.path.join(MODEL_DIR, model_filenames["text"])
         
-        print(f"Using model: {config.CLIP_MODEL_NAME}", file=sys.stderr)
-        print(f"Vision model: {model_filenames['vision']}", file=sys.stderr)
-        print(f"Text model: {model_filenames['text']}", file=sys.stderr)
+        log.info(f"Using model: {config.CLIP_MODEL_NAME}")
+        log.info(f"Vision model: {model_filenames['vision']}")
+        log.info(f"Text model: {model_filenames['text']}")
 
     def _ensure_model(self):
         if self._vision_session is not None:
@@ -85,12 +87,12 @@ class SearchEngine(BaseEngine):
         else:
             url = base_url
 
-        print(f"Downloading CLIP vision model from {url} ...", file=sys.stderr)
+        log.info(f"Downloading CLIP vision model from {url} ...")
         tmp_path = self._vision_model_path + ".tmp"
         try:
             urllib.request.urlretrieve(url, tmp_path)
             os.rename(tmp_path, self._vision_model_path)
-            print(f"Model saved to {self._vision_model_path}", file=sys.stderr)
+            log.info(f"Model saved to {self._vision_model_path}")
         except Exception as e:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
@@ -201,7 +203,7 @@ class SearchEngine(BaseEngine):
                         "similarity": round(similarity, 4),
                     })
                 except Exception as e:
-                    print(f"Warning: Failed to process {fp}: {e}", file=sys.stderr)
+                    log.error(f"Warning: Failed to process {fp}: {e}")
             
             results.sort(key=lambda x: x["similarity"], reverse=True)
             return {

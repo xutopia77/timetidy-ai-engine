@@ -15,7 +15,6 @@ Key Design:
 """
 
 import os
-import sys
 import json
 import time
 import numpy as np
@@ -26,13 +25,15 @@ from engines.base import BaseEngine
 from engines.clip_encoder import CLIPEncoder
 from engines.faiss_index_manager import FAISSIndexManager
 
+from utils.logger import log
+
 
 class SyncEngine(BaseEngine):
     def __init__(self):
         self.clip_encoder = CLIPEncoder()
         self.index_manager = FAISSIndexManager()
         
-        print(f"SyncEngine initialized (file_hash based)", file=sys.stderr)
+        log.info(f"SyncEngine initialized (file_hash based)")
     
     def process(self, params: dict) -> dict:
         cmd = params.get("cmd", "")
@@ -65,7 +66,7 @@ class SyncEngine(BaseEngine):
                 "process_time_ms": 1234.56
             }
         """
-        print(f"Starting sync_all operation...", file=sys.stderr)
+        log.info(f"Starting sync_all operation...")
         
         progress_file_path = params.get("progress_file", "ai-data/progress/process_file.json")
         progress_file = Path(progress_file_path)
@@ -107,7 +108,7 @@ class SyncEngine(BaseEngine):
             
             if record_id is None or file_path is None:
                 failed_count += 1
-                print(f"Invalid file record: {file_record}", file=sys.stderr)
+                log.info(f"Invalid file record: {file_record}")
                 continue
             
             record_key = str(record_id)
@@ -119,7 +120,7 @@ class SyncEngine(BaseEngine):
                     skipped_count += 1
                     continue
                 else:
-                    print(f"Updating file {record_id} (hash changed: {existing_hash} -> {file_hash})", file=sys.stderr)
+                    log.info(f"Updating file {record_id} (hash changed: {existing_hash} -> {file_hash})")
                     
                     try:
                         self.index_manager.remove_vector(record_id)
@@ -132,14 +133,14 @@ class SyncEngine(BaseEngine):
                             processed_count += 1
                         else:
                             failed_count += 1
-                            print(f"Failed to update file {record_id}", file=sys.stderr)
+                            log.error(f"Failed to update file {record_id}")
                     
                     except Exception as e:
                         failed_count += 1
-                        print(f"Error updating file {record_id}: {e}", file=sys.stderr)
+                        log.error(f"Error updating file {record_id}: {e}")
             
             else:
-                print(f"Adding new file {record_id}", file=sys.stderr)
+                log.info(f"Adding new file {record_id}")
                 
                 try:
                     features = self.clip_encoder.encode_image(file_path)
@@ -150,11 +151,11 @@ class SyncEngine(BaseEngine):
                         processed_count += 1
                     else:
                         failed_count += 1
-                        print(f"Failed to add file {record_id}", file=sys.stderr)
+                        log.error(f"Failed to add file {record_id}")
                 
                 except Exception as e:
                     failed_count += 1
-                    print(f"Error adding file {record_id}: {e}", file=sys.stderr)
+                    log.error(f"Error adding file {record_id}: {e}")
         
         self.index_manager.save_index()
         
@@ -162,7 +163,7 @@ class SyncEngine(BaseEngine):
         
         total_files = len(files)
         
-        print(f"Sync completed: {processed_count} processed, {skipped_count} skipped, {failed_count} failed", file=sys.stderr)
+        log.error(f"Sync completed: {processed_count} processed, {skipped_count} skipped, {failed_count} failed")
         
         return {
             "operation": "sync_all",

@@ -15,12 +15,13 @@ Usage:
 """
 
 import os
-import sys
 import json
 import numpy as np
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass
+
+from utils.logger import log
 from engines.base import BaseEngine
 from engines.search_engine import SearchEngine
 
@@ -74,13 +75,12 @@ class HierarchicalTagEngine(BaseEngine):
             
             self._parse_config()
             
-            print(
+            log.info(
                 f"Loaded hierarchical tag config: "
                 f"Level1 categories: {len(self._level1_categories)},"
                 f"Level2 categories: {sum(len(v) for v in self._level2_categories.values())},"
                 f"Attribute categories: {sum(len(v) for v in self._attribute_categories.values())},"
-                f"Config path: {self._config_path}",
-                file=sys.stderr
+                f"Config path: {self._config_path}"
             )
     
     def _parse_config(self):
@@ -148,10 +148,9 @@ class HierarchicalTagEngine(BaseEngine):
             if all_neg_prompts:
                 self._level1_neg_vectors = self._encode_texts_batch(all_neg_prompts)
         
-        print(
+        log.info(
             f"Level1 prompts encoded: {len(all_prompts)} prompts,"
-            f" negative prompts: {sum(len(c.negative_prompts) for c in self._level1_categories)}",
-            file=sys.stderr
+            f" negative prompts: {sum(len(c.negative_prompts) for c in self._level1_categories)}"
         )
     
     def _encode_texts_batch(self, texts: List[str]) -> np.ndarray:
@@ -407,13 +406,13 @@ class HierarchicalTagEngine(BaseEngine):
         level2_threshold = settings.get("level2_threshold", 0.18)
         attribute_threshold = settings.get("attribute_threshold", 0.20)
         
-        print(f"Generating tags for image: {file_path}", file=sys.stderr)
-        print(f"Thresholds: level1={level1_threshold}, level2={level2_threshold}, attributes={attribute_threshold}", file=sys.stderr)
+        log.info(f"Generating tags for image: {file_path}")
+        log.info(f"Thresholds: level1={level1_threshold}, level2={level2_threshold}, attributes={attribute_threshold}")
         
         image_vector = self._search_engine.encode_image(file_path)
         image_vector = image_vector.squeeze(0)
         
-        print(f"Image vector shape: {image_vector.shape}", file=sys.stderr)
+        log.debug(f"Image vector shape: {image_vector.shape}")
         
         data_dbg = {
             "file_path": str(file_path),
@@ -454,7 +453,7 @@ class HierarchicalTagEngine(BaseEngine):
                     })
                 data_dbg["level2_tags"] = level2_tags
             else:
-                print(f"No primary category, skipping level2", file=sys.stderr)
+                log.warning("No primary category, skipping level2")
                 data_dbg["level2_tags"] = []
         
         if tag_level in ["all", "attributes"]:
@@ -493,7 +492,7 @@ class HierarchicalTagEngine(BaseEngine):
         process_time_ms = int((time.time() - start_time) * 1000)
         data_dbg["process_time_ms"] = process_time_ms
         
-        print(f"Total tags generated: {len(tags)}, Process time: {process_time_ms}ms", file=sys.stderr)
+        log.info(f"Total tags generated: {len(tags)}, Process time: {process_time_ms}ms")
         
         # Return protocol format
         return {

@@ -8,13 +8,13 @@ This module provides:
 """
 
 import os
-import sys
 import numpy as np
 from PIL import Image
 import onnxruntime as ort
 from pathlib import Path
 
 import config
+from utils.logger import log
 
 
 MODEL_DIR = Path(__file__).parent.parent / "models"
@@ -33,10 +33,10 @@ class CLIPEncoder:
         self._vision_model_path = MODEL_DIR / model_filenames["vision"]
         self._text_model_path = MODEL_DIR / model_filenames["text"]
         
-        print(f"CLIP Encoder initialized:", file=sys.stderr)
-        print(f"  - Model: {config.CLIP_MODEL_NAME}", file=sys.stderr)
-        print(f"  - Vision model: {model_filenames['vision']}", file=sys.stderr)
-        print(f"  - Text model: {model_filenames['text']}", file=sys.stderr)
+        log.info(f"CLIP Encoder initialized:")
+        log.info(f"  - Model: {config.CLIP_MODEL_NAME}")
+        log.info(f"  - Vision model: {model_filenames['vision']}")
+        log.info(f"  - Text model: {model_filenames['text']}")
     
     def _ensure_model(self):
         if self._vision_session is not None:
@@ -54,7 +54,7 @@ class CLIPEncoder:
                 f"Please run: python scripts/clip_model_manager.py --export --model {config.CLIP_MODEL_NAME}"
             )
         
-        print(f"Loading CLIP models...", file=sys.stderr)
+        log.info(f"Loading CLIP models...")
         
         self._vision_session = ort.InferenceSession(
             str(self._vision_model_path),

@@ -11,6 +11,7 @@ if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8")
     sys.stderr.reconfigure(encoding="utf-8")
 
+from utils.logger import log
 from engines.search_engine_faiss import SearchEngine
 from engines.index_init_engine import IndexInitEngine
 from engines.sync_engine import SyncEngine
@@ -23,7 +24,7 @@ class AIEngine:
         self.engines = {}
 
     def init(self):
-        print("Initializing AI Engine...", file=sys.stderr)
+        log.info("Initializing AI Engine...")
         
         self.engines["search"] = SearchEngine()
         self.engines["index_init"] = IndexInitEngine()
@@ -32,10 +33,10 @@ class AIEngine:
         self.engines["find_similar"] = SimilarityEngine()
         self.engines["ping"] = PingEngine()
         
-        print(f"AI Engine initialized successfully Available actions: {list(self.engines.keys())}", file=sys.stderr)
+        log.info(f"AI Engine initialized successfully Available actions: {list(self.engines.keys())}")
 
     def handle_request(self, request: dict) -> dict:
-        print(f"request-data: {request}", file=sys.stderr)
+        log.info(f"request-data: {request}")
         action = request.get("action", "")
         engine = self.engines.get(action)
 
@@ -64,7 +65,7 @@ class AIEngine:
             if data_dbg:
                 respDat["data_dbg"] = data_dbg
             
-            print(f"response-data: {respDat}", file=sys.stderr)
+            log.info(f"response-data: {respDat}")
             return respDat
         except Exception as e:
             traceback.print_exc()

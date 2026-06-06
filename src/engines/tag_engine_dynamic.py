@@ -24,10 +24,11 @@ Usage:
 """
 
 import os
-import sys
 import numpy as np
 from engines.base import BaseEngine
 from engines.search_engine import SearchEngine
+
+from utils.logger import log
 
 
 class TagEngine(BaseEngine):
@@ -71,7 +72,7 @@ class TagEngine(BaseEngine):
                 tags_to_compute.append(tag)
         
         if tags_to_compute:
-            print(f"Computing embeddings for {len(tags_to_compute)} new tags...", file=sys.stderr)
+            log.info(f"Computing embeddings for {len(tags_to_compute)} new tags...")
             for tag in tags_to_compute:
                 emb = self._search_engine.encode_text(tag)
                 embeddings[tag] = emb

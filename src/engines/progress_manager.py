@@ -39,11 +39,12 @@ Key Design:
 """
 
 import os
-import sys
 import json
 from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Optional
+
+from utils.logger import log
 
 
 class ProgressManager:
@@ -55,7 +56,7 @@ class ProgressManager:
         else:
             self.progress_file = Path(progress_file_path)
         
-        print(f"ProgressManager initialized with file: {self.progress_file}", file=sys.stderr)
+        log.info(f"ProgressManager initialized with file: {self.progress_file}")
     
     def load_progress(self) -> Dict:
         """
@@ -96,10 +97,10 @@ class ProgressManager:
             progress_data["last_update_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             with open(self.progress_file, "w", encoding="utf-8") as f:
                 json.dump(progress_data, f, indent=2, ensure_ascii=False)
-            print(f"Progress file saved: {processed_files} processed, {pending_files} pending, {total_files} total", file=sys.stderr)
+            log.info(f"Progress file saved: {processed_files} processed, {pending_files} pending, {total_files} total")
         
         except Exception as e:
-            print(f"Failed to save progress file: {e}", file=sys.stderr)
+            log.error(f"Failed to save progress file: {e}")
             raise
     
     def calculate_stats(self, progress_data: Dict) -> Dict:
@@ -158,7 +159,7 @@ class ProgressManager:
         files = progress_data.get("files", [])
         pending_files = [f for f in files if f.get("status") == "pending"]
         
-        print(f"Pending files: {len(pending_files)}", file=sys.stderr)
+        log.info(f"Pending files: {len(pending_files)}")
         
         return pending_files
     
@@ -194,7 +195,7 @@ class ProgressManager:
         for file_record in files:
             if file_record.get("record_id") == record_id:
                 file_record["status"] = status
-                print(f"Marked file {record_id} as {status}", file=sys.stderr)
+                log.info(f"Marked file {record_id} as {status}")
                 break
         
         return progress_data

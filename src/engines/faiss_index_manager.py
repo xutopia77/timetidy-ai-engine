@@ -9,13 +9,14 @@ This module manages FAISS vector index:
 """
 
 import os
-import sys
 import json
 import time
 import numpy as np
 from pathlib import Path
 from typing import List, Optional
 import faiss
+
+from utils.logger import log
 
 
 class FAISSIndexManager:
@@ -40,9 +41,9 @@ class FAISSIndexManager:
         self.nlist = 100
         self.nprobe = 10
         
-        print(f"FAISS Index Manager initialized:", file=sys.stderr)
-        print(f"  - Index directory: {self.index_dir}", file=sys.stderr)
-        print(f"  - Feature dimension: {feature_dim}", file=sys.stderr)
+        log.info(f"FAISS Index Manager initialized:")
+        log.info(f"  - Index directory: {self.index_dir}")
+        log.info(f"  - Feature dimension: {feature_dim}")
     
     def is_loaded(self) -> bool:
         return self.index is not None
@@ -55,7 +56,7 @@ class FAISSIndexManager:
             bool - True if successful, False otherwise
         """
         try:
-            print(f"Creating empty FAISS index...", file=sys.stderr)
+            log.info(f"Creating empty FAISS index...")
             
             # For small datasets, use IndexFlatIP (brute force) which doesn't require training
             # This is more reliable and faster for <10000 images
@@ -70,7 +71,7 @@ class FAISSIndexManager:
             # Use more training points: at least 39 * nlist as recommended by FAISS
             n_train = max(self.nlist * 40, 1000)  # At least 1000 training points
             dummy_features = np.random.rand(n_train, self.feature_dim).astype('float32')
-            print(f"Training index with {n_train} dummy vectors...", file=sys.stderr)
+            log.info(f"Training index with {n_train} dummy vectors...")
             index_ivf.train(dummy_features)
             
             # Use IndexIVFFlat directly (not IndexIDMap2) for better remove/add support
@@ -78,77 +79,77 @@ class FAISSIndexManager:
             
             self.metadata = {}
             
-            print(f"Empty index created successfully", file=sys.stderr)
+            log.info(f"Empty index created successfully")
             
             return True
             
         except Exception as e:
-            print(f"Error creating empty index: {e}", file=sys.stderr)
+            log.error(f"Error creating empty index: {e}")
             import traceback
             traceback.print_exc(file=sys.stderr)
             return False
     
     def load_index(self) -> bool:
         if not self.index_file.exists():
-            print(f"Index file not found: {self.index_file}", file=sys.stderr)
+            log.info(f"Index file not found: {self.index_file}")
             return False
         
         if not self.metadata_file.exists():
-            print(f"Metadata file not found: {self.metadata_file}", file=sys.stderr)
+            log.info(f"Metadata file not found: {self.metadata_file}")
             return False
         
         try:
-            print(f"Loading FAISS index from {self.index_file}...", file=sys.stderr)
+            log.info(f"Loading FAISS index from {self.index_file}...")
             self.index = faiss.read_index(str(self.index_file))
             
-            print(f"Loading metadata from {self.metadata_file}...", file=sys.stderr)
+            log.info(f"Loading metadata from {self.metadata_file}...")
             with open(self.metadata_file, "r", encoding="utf-8") as f:
                 self.metadata = json.load(f)
             
-            print(f"Index loaded successfully:Total vectors: {self.index.ntotal}, Metadata entries: {len(self.metadata)}", file=sys.stderr)
+            log.info(f"Index loaded successfully:Total vectors: {self.index.ntotal}, Metadata entries: {len(self.metadata)}")
             
             return True
             
         except Exception as e:
-            print(f"Error loading index: {e}", file=sys.stderr)
+            log.error(f"Error loading index: {e}")
             return False
     
     def build_index(self, features: np.ndarray, record_ids: list, image_hashes: list) -> bool:
         if len(features) == 0:
-            print("No features to build index", file=sys.stderr)
+            log.info("No features to build index")
             return False
         
         if len(features) != len(record_ids) or len(features) != len(image_hashes):
-            print("Mismatch in features, record_ids, and image_hashes lengths", file=sys.stderr)
+            log.info("Mismatch in features, record_ids, and image_hashes lengths")
             return False
         
         try:
-            print(f"Building FAISS index for {len(features)} images...", file=sys.stderr)
+            log.info(f"Building FAISS index for {len(features)} images...")
             
             features_array = np.array(features, dtype=np.float32)
             
             if features_array.shape[1] != self.feature_dim:
-                print(f"Feature dimension mismatch: {features_array.shape[1]} vs {self.feature_dim}", file=sys.stderr)
+                log.info(f"Feature dimension mismatch: {features_array.shape[1]} vs {self.feature_dim}")
                 return False
             
             nlist = min(self.nlist, max(1, int(np.sqrt(len(features)))))
             
-            print(f"Creating IndexIVFFlat with nlist={nlist}...", file=sys.stderr)
+            log.info(f"Creating IndexIVFFlat with nlist={nlist}...")
             quantizer = faiss.IndexFlatIP(self.feature_dim)
             index_ivf = faiss.IndexIVFFlat(quantizer, self.feature_dim, nlist, faiss.METRIC_INNER_PRODUCT)
             
             index_ivf.direct_map = faiss.DirectMap()
             index_ivf.direct_map.type = faiss.DirectMap.Array
             
-            print(f"Training index with {len(features)} vectors...", file=sys.stderr)
+            log.info(f"Training index with {len(features)} vectors...")
             index_ivf.train(features_array)
             
-            print(f"Creating IndexIDMap2 wrapper...", file=sys.stderr)
+            log.info(f"Creating IndexIDMap2 wrapper...")
             self.index = faiss.IndexIDMap2(index_ivf)
             
             ids_array = np.array(record_ids, dtype=np.int64)
             
-            print(f"Adding {len(features)} vectors to index...", file=sys.stderr)
+            log.info(f"Adding {len(features)} vectors to index...")
             self.index.add_with_ids(features_array, ids_array)
             
             self.metadata = {}
@@ -162,19 +163,19 @@ class FAISSIndexManager:
             
             self.save_index()
             
-            print(f"Index built successfully:Total vectors: {self.index.ntotal}, Metadata entries: {len(self.metadata)}", file=sys.stderr)
+            log.info(f"Index built successfully:Total vectors: {self.index.ntotal}, Metadata entries: {len(self.metadata)}")
             
             return True
             
         except Exception as e:
-            print(f"Error building index: {e}", file=sys.stderr)
+            log.error(f"Error building index: {e}")
             import traceback
             traceback.print_exc(file=sys.stderr)
             return False
     
     def save_index(self) -> bool:
         if self.index is None:
-            print("No index to save", file=sys.stderr)
+            log.info("No index to save")
             return False
         
         try:
@@ -196,7 +197,7 @@ class FAISSIndexManager:
             return True
             
         except Exception as e:
-            print(f"Error saving index: {e}", file=sys.stderr)
+            log.error(f"Error saving index: {e}")
             return False
     
     def search(self, query_features: np.ndarray, top_k: int = 10) -> list:
@@ -216,17 +217,17 @@ class FAISSIndexManager:
                     ivf_index = faiss.downcast_index(self.index.index)
                     if hasattr(ivf_index, 'nprobe'):
                         ivf_index.nprobe = min(self.nprobe, ivf_index.nlist)
-                        print(f"Set nprobe={ivf_index.nprobe} for IVF index (nlist={ivf_index.nlist})", file=sys.stderr)
+                        log.info(f"Set nprobe={ivf_index.nprobe} for IVF index (nlist={ivf_index.nlist})")
                 except Exception as e:
-                    print(f"Warning: Failed to downcast index: {e}", file=sys.stderr)
+                    log.error(f"Warning: Failed to downcast index: {e}")
             elif hasattr(self.index, 'nprobe'):
                 self.index.nprobe = self.nprobe
-                print(f"Set nprobe={self.nprobe} for index", file=sys.stderr)
+                log.info(f"Set nprobe={self.nprobe} for index")
             else:
-                print(f"Index does not have nprobe attribute, using default settings", file=sys.stderr)
+                log.info(f"Index does not have nprobe attribute, using default settings")
         except (AttributeError, TypeError) as e:
-            print(f"Warning: Failed to set nprobe parameter: {e}", file=sys.stderr)
-            print(f"Continuing search with default nprobe settings", file=sys.stderr) 
+            log.error(f"Warning: Failed to set nprobe parameter: {e}")
+            log.info(f"Continuing search with default nprobe settings") 
         
         
         distances, ids = self.index.search(query_array, top_k)
@@ -272,7 +273,7 @@ class FAISSIndexManager:
             return True
             
         except Exception as e:
-            print(f"Error adding vector: {e}", file=sys.stderr)
+            log.error(f"Error adding vector: {e}")
             return False
     
     def remove_vector(self, record_id: int) -> bool:
@@ -293,7 +294,7 @@ class FAISSIndexManager:
             return True
             
         except Exception as e:
-            print(f"Error removing vector: {e}", file=sys.stderr)
+            log.error(f"Error removing vector: {e}")
             return False
     
     def get_vector(self, record_id: int) -> Optional[np.ndarray]:
@@ -314,12 +315,12 @@ class FAISSIndexManager:
             record_key = str(record_id)
             
             if record_key not in self.metadata:
-                print(f"Record {record_id} not found in metadata", file=sys.stderr)
+                log.info(f"Record {record_id} not found in metadata")
                 return None
             
             meta = self.metadata[record_key]
             if meta.get("deleted", False):
-                print(f"Record {record_id} is marked as deleted", file=sys.stderr)
+                log.info(f"Record {record_id} is marked as deleted")
                 return None
             
             if hasattr(self.index, 'index') and hasattr(self.index.index, 'direct_map'):
@@ -330,24 +331,24 @@ class FAISSIndexManager:
                     if inner_id >= 0:
                         vector = inner_index.reconstruct(inner_id)
                         vector = np.array(vector, dtype=np.float32).reshape(1, -1)
-                        print(f"Retrieved vector for record {record_id} via direct_map, shape: {vector.shape}", file=sys.stderr)
+                        log.info(f"Retrieved vector for record {record_id} via direct_map, shape: {vector.shape}")
                         return vector
                 except Exception as e:
-                    print(f"direct_map.get failed: {e}", file=sys.stderr)
+                    log.error(f"direct_map.get failed: {e}")
             
             try:
                 vector = self.index.reconstruct(record_id)
                 vector = np.array(vector, dtype=np.float32).reshape(1, -1)
-                print(f"Retrieved vector for record {record_id} using reconstruct, shape: {vector.shape}", file=sys.stderr)
+                log.info(f"Retrieved vector for record {record_id} using reconstruct, shape: {vector.shape}")
                 return vector
             except Exception as e:
-                print(f"reconstruct failed: {e}", file=sys.stderr)
+                log.error(f"reconstruct failed: {e}")
             
-            print(f"Failed to retrieve vector for record {record_id}", file=sys.stderr)
+            log.error(f"Failed to retrieve vector for record {record_id}")
             return None
             
         except Exception as e:
-            print(f"Error getting vector for record {record_id}: {e}", file=sys.stderr)
+            log.error(f"Error getting vector for record {record_id}: {e}")
             import traceback
             traceback.print_exc(file=sys.stderr)
             return None
@@ -378,7 +379,7 @@ class FAISSIndexManager:
             elif hasattr(self.index, 'nprobe'):
                 self.index.nprobe = self.nprobe
         except (AttributeError, TypeError) as e:
-            print(f"Warning: Failed to set nprobe: {e}", file=sys.stderr)
+            log.error(f"Warning: Failed to set nprobe: {e}")
         
         search_k = top_k + (len(exclude_ids) if exclude_ids else 0)
         
@@ -416,7 +417,7 @@ class FAISSIndexManager:
         Returns:
             bool - True if successful, False otherwise
         """
-        print(f"Deleting index files...", file=sys.stderr)
+        log.info(f"Deleting index files...")
         
         deleted_files = []
         
@@ -424,30 +425,30 @@ class FAISSIndexManager:
             try:
                 os.remove(str(self.index_file))
                 deleted_files.append(str(self.index_file))
-                print(f"  - Deleted: {self.index_file}", file=sys.stderr)
+                log.info(f"  - Deleted: {self.index_file}")
             except Exception as e:
-                print(f"  - Failed to delete {self.index_file}: {e}", file=sys.stderr)
+                log.error(f"  - Failed to delete {self.index_file}: {e}")
         
         if self.metadata_file.exists():
             try:
                 os.remove(str(self.metadata_file))
                 deleted_files.append(str(self.metadata_file))
-                print(f"  - Deleted: {self.metadata_file}", file=sys.stderr)
+                log.info(f"  - Deleted: {self.metadata_file}")
             except Exception as e:
-                print(f"  - Failed to delete {self.metadata_file}: {e}", file=sys.stderr)
+                log.error(f"  - Failed to delete {self.metadata_file}: {e}")
         
         if self.config_file.exists():
             try:
                 os.remove(str(self.config_file))
                 deleted_files.append(str(self.config_file))
-                print(f"  - Deleted: {self.config_file}", file=sys.stderr)
+                log.info(f"  - Deleted: {self.config_file}")
             except Exception as e:
-                print(f"  - Failed to delete {self.config_file}: {e}", file=sys.stderr)
+                log.error(f"  - Failed to delete {self.config_file}: {e}")
         
         self.index = None
         self.metadata = {}
         
-        print(f"Index deleted successfully, {len(deleted_files)} files removed", file=sys.stderr)
+        log.info(f"Index deleted successfully, {len(deleted_files)} files removed")
         
         return True
     

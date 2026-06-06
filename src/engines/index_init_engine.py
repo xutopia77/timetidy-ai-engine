@@ -15,7 +15,6 @@ Key Design:
 """
 
 import os
-import sys
 import json
 import time
 import threading
@@ -29,6 +28,8 @@ from engines.clip_encoder import CLIPEncoder
 from engines.faiss_index_manager import FAISSIndexManager
 from engines.progress_manager import ProgressManager
 
+from utils.logger import log
+
 
 class IndexInitEngine(BaseEngine):
     def __init__(self):
@@ -40,7 +41,7 @@ class IndexInitEngine(BaseEngine):
         self.stop_flag = False
         self.build_thread = None
         
-        print(f"IndexInitEngine initialized (file_hash based)", file=sys.stderr)
+        log.info(f"IndexInitEngine initialized (file_hash based)")
     
     def process(self, params: dict) -> dict:
         cmd = params.get("cmd", "")
@@ -81,11 +82,11 @@ class IndexInitEngine(BaseEngine):
                 "message": "Index build started"
             }
         """
-        print(f"Starting index build (rebuild={rebuild})", file=sys.stderr)
+        log.info(f"Starting index build (rebuild={rebuild})")
         
         try:
             progress_data = self.progress_manager.load_progress()
-            print(f"Loaded progress file: {len(progress_data.get('files', []))} files", file=sys.stderr)
+            log.info(f"Loaded progress file: {len(progress_data.get('files', []))} files")
         except FileNotFoundError:
             raise FileNotFoundError(
                 "Progress file not found. Please create progress file first.\n"
@@ -93,13 +94,13 @@ class IndexInitEngine(BaseEngine):
             )
         
         if rebuild:
-            print(f"Deleting existing index...", file=sys.stderr)
+            log.info(f"Deleting existing index...")
             self.index_manager.delete_index()
             progress_data = self.progress_manager.reset_progress_file(progress_data)
-            print(f"Reset progress file: {len(progress_data.get('files', []))} files", file=sys.stderr)
+            log.info(f"Reset progress file: {len(progress_data.get('files', []))} files")
         
         summary = self.progress_manager.get_progress_summary(progress_data)
-        print(f"Progress summary: total={summary['total_files']}, processed={summary['processed_files']}, status={summary['status']}", file=sys.stderr)
+        log.info(f"Progress summary: total={summary['total_files']}, processed={summary['processed_files']}, status={summary['status']}")
         
         if summary["status"] == "completed":
             return {
@@ -139,7 +140,7 @@ class IndexInitEngine(BaseEngine):
                 "message": "Index build stopped, progress saved"
             }
         """
-        print(f"Stopping index build...", file=sys.stderr)
+        log.info(f"Stopping index build...")
         
         self.stop_flag = True
         self.is_building = False
@@ -178,7 +179,7 @@ class IndexInitEngine(BaseEngine):
                 "message": "Index build continued"
             }
         """
-        print(f"Continuing index build...", file=sys.stderr)
+        log.info(f"Continuing index build...")
         
         try:
             progress_data = self.progress_manager.load_progress()
@@ -256,7 +257,7 @@ class IndexInitEngine(BaseEngine):
         files = progress_data.get("files", [])
         
         if not files:
-            print(f"ERROR: No files to process!", file=sys.stderr)
+            log.error(f"ERROR: No files to process!")
             self.is_building = False
             return
         
@@ -265,18 +266,18 @@ class IndexInitEngine(BaseEngine):
         failed_count = 0
         start_time = time.time()
         
-        print(f"Processing files (batch_size={batch_size}, total_files={len(files)})", file=sys.stderr)
+        log.info(f"Processing files (batch_size={batch_size}, total_files={len(files)})")
         
         if not self.index_manager.is_loaded():
-            print(f"Index not loaded, creating new index...", file=sys.stderr)
+            log.info(f"Index not loaded, creating new index...")
             self.index_manager.create_empty_index()
-            print(f"Index created successfully", file=sys.stderr)
+            log.info(f"Index created successfully")
         
         metadata = self.index_manager.metadata
         
         for file_record in files:
             if self.stop_flag:
-                print(f"Stop flag detected, stopping processing", file=sys.stderr)
+                log.info(f"Stop flag detected, stopping processing")
                 self.progress_manager.save_progress(progress_data)
                 self.index_manager.save_index()
                 break
@@ -287,7 +288,7 @@ class IndexInitEngine(BaseEngine):
             file_path = file_record.get("file_path")
             file_hash = file_record.get("file_hash", "")
             
-            print(f"Processing file {record_id}: {file_path}", file=sys.stderr)
+            log.info(f"Processing file {record_id}: {file_path}")
             
             file_record["status"] = "processing"
             
@@ -299,10 +300,10 @@ class IndexInitEngine(BaseEngine):
                 if existing_hash == file_hash:
                     file_record["status"] = "completed"
                     skipped_count += 1
-                    print(f"File {record_id} skipped (file_hash unchanged)", file=sys.stderr)
+                    log.info(f"File {record_id} skipped (file_hash unchanged)")
                     continue
                 else:
-                    print(f"File {record_id} needs update (file_hash changed: {existing_hash} -> {file_hash})", file=sys.stderr)
+                    log.info(f"File {record_id} needs update (file_hash changed: {existing_hash} -> {file_hash})")
             
             try:
                 if record_key in metadata:
@@ -316,12 +317,12 @@ class IndexInitEngine(BaseEngine):
                 file_record["status"] = "completed"
                 processed_count += 1
                 
-                print(f"File {record_id} processed successfully", file=sys.stderr)
+                log.info(f"File {record_id} processed successfully")
                 
             except Exception as e:
                 file_record["status"] = "failed"
                 failed_count += 1
-                print(f"Failed to process {file_path}: {e}", file=sys.stderr)
+                log.error(f"Failed to process {file_path}: {e}")
             
             if (processed_count + skipped_count) % batch_size == 0:
                 progress_data["processed_files"] = processed_count
@@ -337,7 +338,7 @@ class IndexInitEngine(BaseEngine):
                 remaining_files = progress_data.get("total_files", 0) - total_processed
                 estimated_time = remaining_files * avg_time_per_file
                 
-                print(f"Progress: {total_processed}/{progress_data.get('total_files', 0)} files, elapsed={elapsed_time:.1f}s, estimated={estimated_time:.1f}s", file=sys.stderr)
+                log.info(f"Progress: {total_processed}/{progress_data.get('total_files', 0)} files, elapsed={elapsed_time:.1f}s, estimated={estimated_time:.1f}s")
         
         if not self.stop_flag:
             progress_data["processed_files"] = processed_count
@@ -350,7 +351,7 @@ class IndexInitEngine(BaseEngine):
             
             elapsed_time = time.time() - start_time
             total_processed = processed_count + skipped_count
-            print(f"Index build completed: {processed_count} processed, {skipped_count} skipped, {failed_count} failed in {elapsed_time:.1f}s", file=sys.stderr)
+            log.error(f"Index build completed: {processed_count} processed, {skipped_count} skipped, {failed_count} failed in {elapsed_time:.1f}s")
     
     def _get_status(self) -> dict:
         """Get index init engine status"""

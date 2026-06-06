@@ -15,7 +15,6 @@ Design based on plan-discuss.md:
 """
 
 import os
-import sys
 import json
 import time
 import numpy as np
@@ -27,6 +26,8 @@ from engines.base import BaseEngine
 from engines.faiss_index_manager import FAISSIndexManager
 from engines.clip_encoder import CLIPEncoder
 
+from utils.logger import log
+
 
 class SearchEngine(BaseEngine):
     def __init__(self):
@@ -35,9 +36,9 @@ class SearchEngine(BaseEngine):
         
         self.text_cache_size = 100
         
-        print(f"SearchEngine initialized:", file=sys.stderr)
-        print(f"  - CLIP encoder ready", file=sys.stderr)
-        print(f"  - FAISS index manager ready", file=sys.stderr)
+        log.info(f"SearchEngine initialized:")
+        log.info(f"  - CLIP encoder ready")
+        log.info(f"  - FAISS index manager ready")
     
     def _ensure_index_loaded(self):
         if not self.index_manager.is_loaded():

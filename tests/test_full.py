@@ -348,7 +348,6 @@ def main():
     
     # Build file_path to record_id mapping from process_file.json
     file_to_record_id = {}
-    progress_dir = project_root / "ai-data" / "progress"
     if process_file_path.exists():
         with open(process_file_path, "r", encoding="utf-8") as f:
             process_file_data = json.load(f)

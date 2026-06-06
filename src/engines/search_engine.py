@@ -70,12 +70,11 @@ class SearchEngine(BaseEngine):
             providers=["CPUExecutionProvider"],
         )
 
-        print(
+        log.info(
             f"CLIP search engine ready:\n"
             f"  - Vision encoder loaded\n"
             f"  - Text encoder loaded\n"
-            f"  - Feature dim: {config.get_feature_dim()}",
-            file=sys.stderr,
+            f"  - Feature dim: {config.get_feature_dim()}"
         )
 
     def _download_vision_model(self):

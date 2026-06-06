@@ -66,12 +66,11 @@ class CLIPEncoder:
             providers=["CPUExecutionProvider"],
         )
         
-        print(
+        log.info(
             f"CLIP models loaded: "
             f"Vision encoder ready,"
             f"Text encoder ready,"
-            f"Feature dim: {config.get_feature_dim()}",
-            file=sys.stderr,
+            f"Feature dim: {config.get_feature_dim()}"
         )
     
     def _preprocess_image(self, image_path: str) -> np.ndarray:

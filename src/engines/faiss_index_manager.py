@@ -86,7 +86,7 @@ class FAISSIndexManager:
         except Exception as e:
             log.error(f"Error creating empty index: {e}")
             import traceback
-            traceback.print_exc(file=sys.stderr)
+            log.error(traceback.format_exc())
             return False
     
     def load_index(self) -> bool:
@@ -170,7 +170,7 @@ class FAISSIndexManager:
         except Exception as e:
             log.error(f"Error building index: {e}")
             import traceback
-            traceback.print_exc(file=sys.stderr)
+            log.error(traceback.format_exc())
             return False
     
     def save_index(self) -> bool:
@@ -350,7 +350,7 @@ class FAISSIndexManager:
         except Exception as e:
             log.error(f"Error getting vector for record {record_id}: {e}")
             import traceback
-            traceback.print_exc(file=sys.stderr)
+            log.error(traceback.format_exc())
             return None
     
     def search_by_vector(self, query_vector: np.ndarray, top_k: int = 10, exclude_ids: List[int] = None) -> list:

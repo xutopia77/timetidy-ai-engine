@@ -317,7 +317,7 @@ class IndexInitEngine(BaseEngine):
                 file_record["status"] = "completed"
                 processed_count += 1
                 
-                log.info(f"File {record_id} processed successfully")
+                # log.info(f"File {record_id} processed successfully")
                 
             except Exception as e:
                 file_record["status"] = "failed"

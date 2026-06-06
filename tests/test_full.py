@@ -157,6 +157,10 @@ def main():
     
     args = parser.parse_args()
     
+    # Record start time
+    start_time = time.time()
+    start_time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
     print("\n" + "="*80)
     print("AI Engine stdio Communication Test (File Hash Based)")
     print("="*80)
@@ -678,6 +682,21 @@ def main():
     detect_result = test_results.get('detect_similar_groups', {})
     if detect_result.get('code') == 0:
         print(f"  - Groups: {detect_result.get('total_groups', 0)}, Pairs: {detect_result.get('total_similar_pairs', 0)}")
+    
+    # Print timing statistics
+    end_time = time.time()
+    end_time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    elapsed_seconds = end_time - start_time
+    elapsed_minutes = int(elapsed_seconds // 60)
+    elapsed_secs = int(elapsed_seconds % 60)
+    elapsed_ms = int((elapsed_seconds % 1) * 1000)
+    
+    print(f"\n{'='*80}")
+    print("Test Timing Statistics:")
+    print(f"  Start Time:   {start_time_str}")
+    print(f"  End Time:     {end_time_str}")
+    print(f"  Total Time:   {elapsed_minutes}m {elapsed_secs}s {elapsed_ms}ms ({elapsed_seconds:.2f}s)")
+    print(f"{'='*80}")
     
     print(f"\nReport generated: {md_path}")
     print(f"\nOpen the Markdown report to view test results!")

@@ -227,7 +227,10 @@
         "文档照片",
         "二维码照片"
       ],
-      "negative_prompts": []
+      "negative_prompts": [
+        "清晰的照片",
+        "有明确主题的照片"
+      ]
     }
   ],
   "level2_categories": {

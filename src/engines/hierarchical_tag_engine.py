@@ -51,17 +51,36 @@ class HierarchicalTagEngine(BaseEngine):
         self._search_engine = SearchEngine()
         self._config = None
         self._config_path = config_path or self._get_default_config_path()
+        self._cache_path = self._get_cache_path()
         self._top_k = top_k
         self._level1_categories = []
         self._level2_categories = {}
         self._attribute_categories = {}
+        
+        # Level1 caches
         self._level1_vectors = None
         self._level1_prompt_counts = []
+        self._level1_neg_vectors = None
+        self._level1_neg_prompt_counts = []
+        
+        # Level2 caches: {level1_id: (vectors, prompt_counts, neg_vectors, neg_prompt_counts)}
+        self._level2_cache = {}
+        
+        # Attributes caches: {attr_type: (vectors, prompt_counts, neg_vectors, neg_prompt_counts)}
+        self._attribute_cache = {}
+        
         self._initialized = False  # Flag to avoid re-initialization
         
     def _get_default_config_path(self):
         script_dir = Path(__file__).parent.parent
         return script_dir / "config" / "hierarchical_tags.json"
+    
+    def _get_cache_path(self):
+        """Get cache file path"""
+        script_dir = Path(__file__).parent.parent
+        cache_dir = script_dir.parent / "ai-data" / "prompt_cache"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        return cache_dir / "hierarchical_tags_cache.npz"
     
     def _load_config(self):
         if self._config is None:
@@ -123,8 +142,117 @@ class HierarchicalTagEngine(BaseEngine):
         
         self._search_engine._ensure_model()
         self._load_config()
-        self._prepare_level1()
+        self._prepare_all_prompts()
         self._initialized = True
+    
+    def _is_cache_valid(self) -> bool:
+        """Check if cache file is valid and up-to-date
+        
+        Returns:
+            True if cache is valid, False otherwise
+        """
+        if not os.path.exists(self._cache_path):
+            return False
+        
+        try:
+            cache = np.load(self._cache_path, allow_pickle=True)
+            
+            # 1. Check config file modification time
+            config_mtime = os.path.getmtime(self._config_path)
+            if float(cache["config_mtime"]) < config_mtime:
+                log.info("Cache invalid: config file updated")
+                return False
+            
+            # 2. Check version
+            cache_version = str(cache["version"])
+            config_version = self._config.get("version", "unknown")
+            if cache_version != config_version:
+                log.info(f"Cache invalid: version mismatch ({cache_version} vs {config_version})")
+                return False
+            
+            return True
+            
+        except Exception as e:
+            log.warning(f"Cache invalid: failed to load ({e})")
+            return False
+    
+    def _load_prompt_cache(self) -> bool:
+        """Load prompt vectors from cache
+        
+        Returns:
+            True if loaded successfully, False otherwise
+        """
+        try:
+            cache = np.load(self._cache_path, allow_pickle=True)
+            
+            # Load level1 cache
+            self._level1_vectors = cache["level1_vectors"]
+            self._level1_prompt_counts = list(cache["level1_prompt_counts"])
+            self._level1_neg_vectors = cache.get("level1_neg_vectors", None)
+            self._level1_neg_prompt_counts = list(cache.get("level1_neg_prompt_counts", []))
+            
+            # Load level2 cache
+            level2_keys = list(cache["level2_keys"])
+            for key in level2_keys:
+                vectors = cache[f"level2_{key}_vectors"]
+                counts = list(cache[f"level2_{key}_counts"])
+                neg_vectors = cache.get(f"level2_{key}_neg_vectors", None)
+                neg_counts = list(cache.get(f"level2_{key}_neg_counts", []))
+                self._level2_cache[key] = (vectors, counts, neg_vectors, neg_counts)
+            
+            # Load attribute cache
+            attr_keys = list(cache["attr_keys"])
+            for key in attr_keys:
+                vectors = cache[f"attr_{key}_vectors"]
+                counts = list(cache[f"attr_{key}_counts"])
+                neg_vectors = cache.get(f"attr_{key}_neg_vectors", None)
+                neg_counts = list(cache.get(f"attr_{key}_neg_counts", []))
+                self._attribute_cache[key] = (vectors, counts, neg_vectors, neg_counts)
+            
+            log.info(f"Prompt cache loaded from {self._cache_path}")
+            return True
+            
+        except Exception as e:
+            log.warning(f"Failed to load cache: {e}")
+            return False
+    
+    def _save_prompt_cache(self):
+        """Save prompt vectors to cache"""
+        try:
+            cache_data = {
+                # Metadata
+                "config_mtime": os.path.getmtime(self._config_path),
+                "version": self._config.get("version", "unknown"),
+                # Level1
+                "level1_vectors": self._level1_vectors,
+                "level1_prompt_counts": np.array(self._level1_prompt_counts),
+                "level1_neg_vectors": self._level1_neg_vectors if self._level1_neg_vectors is not None else np.array([]),
+                "level1_neg_prompt_counts": np.array(self._level1_neg_prompt_counts),
+                # Level2 keys
+                "level2_keys": np.array(list(self._level2_cache.keys())),
+                # Attribute keys
+                "attr_keys": np.array(list(self._attribute_cache.keys())),
+            }
+            
+            # Add level2 cache data
+            for key, (vectors, counts, neg_vectors, neg_counts) in self._level2_cache.items():
+                cache_data[f"level2_{key}_vectors"] = vectors
+                cache_data[f"level2_{key}_counts"] = np.array(counts)
+                cache_data[f"level2_{key}_neg_vectors"] = neg_vectors if neg_vectors is not None else np.array([])
+                cache_data[f"level2_{key}_neg_counts"] = np.array(neg_counts)
+            
+            # Add attribute cache data
+            for key, (vectors, counts, neg_vectors, neg_counts) in self._attribute_cache.items():
+                cache_data[f"attr_{key}_vectors"] = vectors
+                cache_data[f"attr_{key}_counts"] = np.array(counts)
+                cache_data[f"attr_{key}_neg_vectors"] = neg_vectors if neg_vectors is not None else np.array([])
+                cache_data[f"attr_{key}_neg_counts"] = np.array(neg_counts)
+            
+            np.savez_compressed(self._cache_path, **cache_data)
+            log.info(f"Prompt cache saved to {self._cache_path}")
+            
+        except Exception as e:
+            log.warning(f"Failed to save cache: {e}")
     
     def _prepare_level1(self):
         """Pre-encode level1 category prompts and negative prompts"""
@@ -157,6 +285,97 @@ class HierarchicalTagEngine(BaseEngine):
             f"Level1 prompts encoded: {len(all_prompts)} prompts,"
             f" negative prompts: {sum(len(c.negative_prompts) for c in self._level1_categories)}"
         )
+    
+    def _prepare_all_prompts(self):
+        """Pre-encode all prompts at initialization
+        
+        Uses cache if valid, otherwise encodes and saves to cache.
+        """
+        import time
+        start_time = time.time()
+        
+        # Try to load from cache first
+        if self._is_cache_valid() and self._load_prompt_cache():
+            elapsed = int((time.time() - start_time) * 1000)
+            total_prompts = (
+                sum(len(c.prompts) for c in self._level1_categories) +
+                sum(sum(len(c.prompts) for c in cats) for cats in self._level2_categories.values()) +
+                sum(sum(len(c.prompts) for c in cats) for cats in self._attribute_categories.values())
+            )
+            log.info(f"Prompt cache loaded: {total_prompts} prompts in {elapsed}ms")
+            return
+        
+        # Cache invalid or not found, encode prompts
+        log.info("Encoding prompts from scratch...")
+        
+        # 1. Prepare level1 prompts
+        self._prepare_level1()
+        
+        # 2. Prepare level2 prompts for all level1 categories
+        settings = self._config.get("settings", {})
+        enable_negative = settings.get("enable_negative_prompts", True)
+        
+        for level1_id, categories in self._level2_categories.items():
+            if not categories:
+                continue
+            
+            # Encode positive prompts
+            all_prompts = []
+            prompt_counts = []
+            for cat in categories:
+                all_prompts.extend(cat.prompts)
+                prompt_counts.append(len(cat.prompts))
+            vectors = self._encode_texts_batch(all_prompts)
+            
+            # Encode negative prompts
+            neg_vectors = None
+            neg_prompt_counts = []
+            if enable_negative:
+                all_neg_prompts = []
+                for cat in categories:
+                    all_neg_prompts.extend(cat.negative_prompts)
+                    neg_prompt_counts.append(len(cat.negative_prompts))
+                if all_neg_prompts:
+                    neg_vectors = self._encode_texts_batch(all_neg_prompts)
+            
+            self._level2_cache[level1_id] = (vectors, prompt_counts, neg_vectors, neg_prompt_counts)
+        
+        # 3. Prepare attribute prompts for all attribute types
+        for attr_type, categories in self._attribute_categories.items():
+            if not categories:
+                continue
+            
+            # Encode positive prompts
+            all_prompts = []
+            prompt_counts = []
+            for cat in categories:
+                all_prompts.extend(cat.prompts)
+                prompt_counts.append(len(cat.prompts))
+            vectors = self._encode_texts_batch(all_prompts)
+            
+            # Encode negative prompts
+            neg_vectors = None
+            neg_prompt_counts = []
+            if enable_negative:
+                all_neg_prompts = []
+                for cat in categories:
+                    all_neg_prompts.extend(cat.negative_prompts)
+                    neg_prompt_counts.append(len(cat.negative_prompts))
+                if all_neg_prompts:
+                    neg_vectors = self._encode_texts_batch(all_neg_prompts)
+            
+            self._attribute_cache[attr_type] = (vectors, prompt_counts, neg_vectors, neg_prompt_counts)
+        
+        elapsed = int((time.time() - start_time) * 1000)
+        total_prompts = (
+            sum(len(c.prompts) for c in self._level1_categories) +
+            sum(sum(len(c.prompts) for c in cats) for cats in self._level2_categories.values()) +
+            sum(sum(len(c.prompts) for c in cats) for cats in self._attribute_categories.values())
+        )
+        log.info(f"All prompts pre-encoded: {total_prompts} prompts in {elapsed}ms")
+        
+        # Save to cache
+        self._save_prompt_cache()
     
     def _encode_texts_batch(self, texts: List[str]) -> np.ndarray:
         """Encode multiple texts in batch
@@ -290,23 +509,29 @@ class HierarchicalTagEngine(BaseEngine):
         if not categories:
             return {"id": "unknown", "name": "Unknown", "score": 0.0}
         
+        # Use cached vectors if available
+        if level1_id in self._level2_cache:
+            vectors, prompt_counts, neg_vectors, neg_prompt_counts = self._level2_cache[level1_id]
+        else:
+            # Fallback: encode on-the-fly (should not happen if initialized properly)
+            settings = self._config.get("settings", {})
+            enable_negative = settings.get("enable_negative_prompts", True)
+            
+            vectors = self._encode_category_prompts(categories)
+            prompt_counts = [len(cat.prompts) for cat in categories]
+            
+            neg_vectors = None
+            neg_prompt_counts = []
+            if enable_negative:
+                all_neg_prompts = []
+                for cat in categories:
+                    all_neg_prompts.extend(cat.negative_prompts)
+                    neg_prompt_counts.append(len(cat.negative_prompts))
+                if all_neg_prompts:
+                    neg_vectors = self._encode_texts_batch(all_neg_prompts)
+        
         settings = self._config.get("settings", {})
         top_k_level2 = settings.get("top_k_level2", 2)
-        enable_negative = settings.get("enable_negative_prompts", True)
-        
-        vectors = self._encode_category_prompts(categories)
-        prompt_counts = [len(cat.prompts) for cat in categories]
-        
-        # Encode negative prompts for level2
-        neg_vectors = None
-        neg_prompt_counts = []
-        if enable_negative:
-            all_neg_prompts = []
-            for cat in categories:
-                all_neg_prompts.extend(cat.negative_prompts)
-                neg_prompt_counts.append(len(cat.negative_prompts))
-            if all_neg_prompts:
-                neg_vectors = self._encode_texts_batch(all_neg_prompts)
         
         scores = self._compute_category_scores(
             image_vector, vectors, prompt_counts,
@@ -341,24 +566,29 @@ class HierarchicalTagEngine(BaseEngine):
         """
         settings = self._config.get("settings", {})
         top_k_attrs = settings.get("top_k_attributes", 3)
-        enable_negative = settings.get("enable_negative_prompts", True)
         
         results = {}
         
         for attr_type, categories in self._attribute_categories.items():
-            vectors = self._encode_category_prompts(categories)
-            prompt_counts = [len(cat.prompts) for cat in categories]
-            
-            # Encode negative prompts for attributes
-            neg_vectors = None
-            neg_prompt_counts = []
-            if enable_negative:
-                all_neg_prompts = []
-                for cat in categories:
-                    all_neg_prompts.extend(cat.negative_prompts)
-                    neg_prompt_counts.append(len(cat.negative_prompts))
-                if all_neg_prompts:
-                    neg_vectors = self._encode_texts_batch(all_neg_prompts)
+            # Use cached vectors if available
+            if attr_type in self._attribute_cache:
+                vectors, prompt_counts, neg_vectors, neg_prompt_counts = self._attribute_cache[attr_type]
+            else:
+                # Fallback: encode on-the-fly (should not happen if initialized properly)
+                enable_negative = settings.get("enable_negative_prompts", True)
+                
+                vectors = self._encode_category_prompts(categories)
+                prompt_counts = [len(cat.prompts) for cat in categories]
+                
+                neg_vectors = None
+                neg_prompt_counts = []
+                if enable_negative:
+                    all_neg_prompts = []
+                    for cat in categories:
+                        all_neg_prompts.extend(cat.negative_prompts)
+                        neg_prompt_counts.append(len(cat.negative_prompts))
+                    if all_neg_prompts:
+                        neg_vectors = self._encode_texts_batch(all_neg_prompts)
             
             scores = self._compute_category_scores(
                 image_vector, vectors, prompt_counts,

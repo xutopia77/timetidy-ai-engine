@@ -157,8 +157,7 @@
 | action | 说明 | 子操作（data.cmd） |
 |--------|------|----------------------------------------|
 | search | 文搜图、图搜图 | search、encode_image、encode_text、get_status |
-| index_init | 索引初始化 | start、stop、continue、get_progress、get_status |
-| sync | 数据同步 | sync_all、get_status |
+| index_init | 索引初始化 | start、stop、get_progress、get_status |
 | tag_detect | 标签检测 | generate_tags |
 | find_similar | 相似图搜索 | find_similar、detect_similar_groups |
 | ping | 通信测试 | 无 |
@@ -1158,7 +1157,7 @@ IndexInitEngine接口：
      "id": "1234567890",
      "action": "index_init",
      "data": {
-       "cmd": "start",  // start、stop、continue、get_progress（默认）、get_status
+       "cmd": "start",  // start、stop、get_progress、get_status
        "rebuild": false
      }
    }
@@ -1464,7 +1463,7 @@ Python处理流程：
      "id": "1234567890",
      "action": "index_init",
      "data": {
-       "cmd": "start",  // "start", "stop", "continue", "get_progress"
+       "cmd": "start",  // "start", "stop", "get_progress", "get_status"
        "rebuild": false  // 是否重建索引
      }
    }

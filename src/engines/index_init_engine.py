@@ -53,9 +53,6 @@ class IndexInitEngine(BaseEngine):
         elif cmd == "stop":
             return self._stop_build()
         
-        elif cmd == "continue":
-            return self._continue_build()
-        
         elif cmd == "get_progress":
             return self._get_progress()
         
@@ -165,53 +162,6 @@ class IndexInitEngine(BaseEngine):
             "message": "Index build stopped, progress saved"
         }
     
-    def _continue_build(self) -> dict:
-        """
-        Continue index building from progress file
-        
-        Returns:
-            {
-                "success": true,
-                "operation": "continue",
-                "total_files": 10000,
-                "processed_files": 5000,
-                "status": "processing",
-                "message": "Index build continued"
-            }
-        """
-        log.info(f"Continuing index build...")
-        
-        try:
-            progress_data = self.progress_manager.load_progress()
-        except FileNotFoundError:
-            raise FileNotFoundError("Progress file not found. Cannot continue build.")
-        
-        summary = self.progress_manager.get_progress_summary(progress_data)
-        
-        if summary["status"] == "completed":
-            return {
-                "operation": "continue",
-                "status": "completed",
-                "message": "Index already completed"
-            }
-        
-        self.is_building = True
-        self.stop_flag = False
-        
-        self.build_thread = threading.Thread(
-            target=self._process_files_async,
-            args=(progress_data,)
-        )
-        self.build_thread.start()
-        
-        return {
-            "operation": "continue",
-            "total_files": summary["total_files"],
-            "processed_files": summary["processed_files"],
-            "status": "processing",
-            "message": "Index build continued"
-        }
-    
     def _get_progress(self) -> dict:
         """
         Get current build progress
@@ -287,11 +237,9 @@ class IndexInitEngine(BaseEngine):
             record_id = file_record.get("record_id")
             file_path = file_record.get("file_path")
             file_hash = file_record.get("file_hash", "")
-            
             log.info(f"Processing file {record_id}: {file_path}")
             
             file_record["status"] = "processing"
-            
             record_key = str(record_id)
             
             if record_key in metadata:
@@ -311,9 +259,7 @@ class IndexInitEngine(BaseEngine):
                 
                 features = self.clip_encoder.encode_image(file_path)
                 features = features.flatten()
-                
                 self.index_manager.add_vector(features, record_id, file_hash)
-                
                 file_record["status"] = "completed"
                 processed_count += 1
                 

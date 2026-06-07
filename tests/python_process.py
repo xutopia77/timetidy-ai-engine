@@ -23,6 +23,14 @@ if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8")
     sys.stderr.reconfigure(encoding="utf-8")
 
+# Add src directory to Python path for utils module
+project_root = Path(__file__).parent.parent
+src_dir = project_root / "src"
+if str(src_dir) not in sys.path:
+    sys.path.insert(0, str(src_dir))
+
+from utils.logger import log
+
 
 class PythonProcess:
     def __init__(self, python_path: str = "python", script_path: str = None):
@@ -41,7 +49,7 @@ class PythonProcess:
             self.script_path = str(project_root / "src" / "main.py")
         
         if not Path(self.script_path).exists():
-            print(f"Error: AI script not found: {self.script_path}")
+            log.error(f"AI script not found: {self.script_path}")
             return False
         
         try:
@@ -66,15 +74,15 @@ class PythonProcess:
             time.sleep(1)
             
             if self.process.poll() is not None:
-                print(f"Error: Python process exited immediately with code {self.process.returncode}")
+                log.error(f"Python process exited immediately with code {self.process.returncode}")
                 self.running = False
                 return False
             
-            print(f"Python process started successfully (PID: {self.process.pid})")
+            log.info(f"Python process started successfully (PID: {self.process.pid})")
             return True
             
         except Exception as e:
-            print(f"Error starting Python process: {e}")
+            log.error(f"Error starting Python process: {e}")
             self.running = False
             return False
     
@@ -100,11 +108,11 @@ class PythonProcess:
                         self.lock.release()
                     
                 except json.JSONDecodeError as e:
-                    print(f"Error decoding response: {e}")
-                    print(f"Raw line: {line}")
+                    log.error(f"Error decoding response: {e}")
+                    log.error(f"Raw line: {line}")
                     
         except Exception as e:
-            print(f"Error reading responses: {e}")
+            log.error(f"Error reading responses: {e}")
         finally:
             self.running = False
     
@@ -112,13 +120,13 @@ class PythonProcess:
         try:
             for line in self.process.stderr:
                 if line:
-                    print(f"[ai-log] {line.strip()}")
+                    log.info(f"[ai-log] {line.strip()}")
         except Exception as e:
-            print(f"Error reading stderr: {e}")
+            log.error(f"Error reading stderr: {e}")
     
     def send_request(self, action: str, params: Dict[str, Any], timeout: float = 120.0) -> Optional[Dict]:
         if not self.running or self.process.poll() is not None:
-            print("Error: Python process is not running")
+            log.error("Python process is not running")
             return None
         
         request_id = str(int(time.time() * 1000000))
@@ -148,7 +156,7 @@ class PythonProcess:
                     del self.pending[request_id]
             finally:
                 self.lock.release()
-            print(f"Error sending request: {e}")
+            log.error(f"Error sending request: {e}")
             return None
         
         try:
@@ -170,7 +178,7 @@ class PythonProcess:
                     del self.pending[request_id]
             finally:
                 self.lock.release()
-            print(f"Error: Request timeout after {timeout}s")
+            log.error(f"Request timeout after {timeout}s")
             return None
     
     def stop(self):
@@ -182,7 +190,7 @@ class PythonProcess:
             except subprocess.TimeoutExpired:
                 self.process.kill()
             except Exception as e:
-                print(f"Error stopping process: {e}")
+                log.error(f"Error stopping process: {e}")
         
         self.running = False
     
@@ -191,29 +199,29 @@ class PythonProcess:
 
 
 def test_communication():
-    print("\n" + "="*80)
-    print("AI Engine stdio Communication Test")
-    print("="*80)
+    log.info("\n" + "="*80)
+    log.info("AI Engine stdio Communication Test")
+    log.info("="*80)
     
     process = PythonProcess()
     
     if not process.start():
-        print("\nFailed to start Python process")
+        log.error("Failed to start Python process")
         return False
     
-    print("\nTesting ping...")
+    log.info("\nTesting ping...")
     response = process.send_request("ping", {})
     
     if response and response.get("code") == 0:
-        print("✓ Ping successful")
-        print(f"  Response: {response}")
+        log.info("✓ Ping successful")
+        log.info(f"  Response: {response}")
     else:
-        print("✗ Ping failed")
-        print(f"  Response: {response}")
+        log.error("✗ Ping failed")
+        log.error(f"  Response: {response}")
         process.stop()
         return False
     
-    print("\nCommunication test completed successfully!")
+    log.info("\nCommunication test completed successfully!")
     
     process.stop()
     

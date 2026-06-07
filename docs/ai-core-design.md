@@ -166,10 +166,7 @@
 | ping | 通信测试 | 无 |
 
 优势：
-- 进程常驻，避免每次启动Python的开销
 - 简单的请求-响应模型
-- 易于调试（stderr输出日志）
-
 
 #### 1.2 技术栈选择
 
@@ -421,7 +418,7 @@ SimilarityEngine（相似度引擎）
 5. Go接收结果并处理
 
 关键设计：
-- **必须提供record_id**：从FAISS索引获取图片向量，不再编码图片，FAISS中如果没有该record_id，返回空标签
+- **必须提供record_id**：从FAISS索引获取图片向量，不再编码图片，FAISS中如果没有该record_id，抛出错误
 - 从JSON配置文件加载标签体系
 - 标签文本向量预计算并缓存（NPZ文件）
 - 支持正向和负向提示词（negative prompts）
@@ -450,8 +447,8 @@ SimilarityEngine（相似度引擎）
 
 调优优势：
 - **第一次**：生成FAISS索引（编码所有图片）
-- **后续**：每次调整配置只需~30秒（1万张图片）
-- **节省时间**：假设迭代10次，从~14小时降至~88分钟
+- **后续**：每次调整配置只需~ 30秒（1万张图片）
+- **节省时间**：假设迭代10次，从~ 14小时降至~ 88分钟
 
 **函数接口设计：**
 
@@ -464,7 +461,6 @@ SimilarityEngine（相似度引擎）
      "data": {
        "cmd": "generate_tags",  // 可选，默认为generate_tags
        "record_id": 1001,       // 必需，用于从FAISS获取图片向量
-       "file_path": "/path/to/image.jpg",  // 可选，仅用于日志
        "tag_level": "all"       // "level1", "level2", "attributes", "all"
      }
    }
@@ -472,11 +468,9 @@ SimilarityEngine（相似度引擎）
 // - record_id（必需）：图片在FAISS索引中的ID，用于获取图片向量
 // - file_path（可选）：图片路径，仅用于日志记录
 // - tag_level（可选）：标签层级，默认为"all"
-
 // 错误处理：
 // - 如果 record_id 为 None：抛出 ValueError
 // - 如果 record_id 在 FAISS 中不存在：抛出 ValueError
-
 ```
 
 响应：
@@ -490,17 +484,9 @@ SimilarityEngine（相似度引擎）
       {"label": "旅游出行", "confidence": 0.92},
       {"label": "景点打卡", "confidence": 0.88},
       {"label": "白天", "confidence": 0.90},
-      {"label": "晴天", "confidence": 0.85},
-      {"label": "夏季", "confidence": 0.78}
     ]
   },
   "data_dbg": {
-    "primary_category": {
-      "id": "travel",
-      "name": "旅游出行",
-      "confidence": 0.92,
-      "level": 1
-    },
     "level1_tags": [
       {"id": "travel", "name": "旅游出行", "confidence": 0.92, "level": 1},
       {"id": "outdoor", "name": "户外自然", "confidence": 0.75, "level": 1}
@@ -521,66 +507,6 @@ SimilarityEngine（相似度引擎）
 **配置文件说明version 2.0：**
 
 配置文件路径：src/config/hierarchical_tags.json
-配置文件结构：
-```json
-{
-  "version": "2.0",
-  "description": "Hierarchical tag configuration for family photo album",
-  "level1_categories": [
-    {
-      "id": "travel",
-      "name": "旅游出行",
-      "prompts": [
-        "一张旅游的照片",
-        "旅行时拍的照片",
-        "外出旅游的照片"
-      ]
-    },
-    // ... 其他一级分类
-  ],
-  "level2_categories": {
-    "travel": [
-      {
-        "id": "domestic_travel",
-        "name": "国内游",
-        "prompts": [
-          "一张国内旅游的照片",
-          "国内景点游玩照片"
-        ]
-      },
-      // ... 其他二级分类
-    ]
-  },
-  "attribute_categories": {
-    "time": [
-      {
-        "id": "daytime",
-        "name": "白天",
-        "prompts": ["一张白天拍摄的照片", "日光下的照片"]
-      }
-    ],
-    "weather": [...],
-    "season": [...]
-  },
-  "settings": {
-    "level1_threshold": 0.25,
-    "level2_threshold": 0.20,
-    "attribute_threshold": 0.25,
-    "top_k_level1": 3,
-    "top_k_level2": 5,
-    "top_k_attributes": 2,
-    "use_multiple_prompts": true,
-    "average_prompt_embeddings": true
-  }
-}
-
-// 用户自定义：
-// - 可以修改标签名称和ID
-// - 可以添加新的标签类别
-// - 可以修改提示词（prompts）提高准确度
-// - 可以调整阈值和top_k参数
-```
-
 **配置文件说明version 3.0：**
 ```json
 {
@@ -652,41 +578,16 @@ SimilarityEngine（相似度引擎）
     ]
   },
   "settings": {
-    "level1_threshold": 0.22,
-    "level2_threshold": 0.18,
-    "attribute_threshold": 0.20,
+    "level1_threshold": 0,
+    "level2_threshold": 0,
+    "attribute_threshold": 0,
     "top_k_level1": 1,
     "top_k_level2": 2,
-    "top_k_attributes": 3,
-    "use_multiple_prompts": true,
-    "average_prompt_embeddings": true,
-    "enable_negative_prompts": true,
-    "hierarchical_filtering": true,
-    "confidence_weighting": true,
-    "conflict_resolution_priority": [
-      "parenting",
-      "celebration",
-      "travel",
-      "daily_life",
-      "portrait",
-      "food",
-      "pet",
-      "landscape",
-      "hobby",
-      "objects",
-      "transport",
-      "other"
-    ]
+    "top_k_attributes": 3
   }
 }
-
 // - 负向 Prompt 机制
-// - hierarchical_filtering会确保只有一级分类命中后才计算其下的二级标签，彻底解决跨分类重叠问题
-// - conflict_resolution_priority定义了分类优先级，当两个分类相似度接近时自动选择高优先级的分类
-
 ```
-
-
 
 #### 2.3 图片相似度搜索功能（SimilarityEngine）
 
@@ -697,9 +598,8 @@ SimilarityEngine 提供多种相似度搜索模式：
 
 ┌─────────────────────────────────────────────────────────────────┐
 │  find_similar（默认）                                            │
-│  - 输入：参考图片 record_id 列表（支持批量）                       │
+│  - 输入：参考图片 record_ids 列表                                 │
 │  - 流程：从索引获取向量 → FAISS搜索 → 返回结果                     │
-│  - 性能：~2-5ms（单个），~10-20ms（批量）                         │
 ├─────────────────────────────────────────────────────────────────┤
 │  detect_similar_groups                                          │
 │  - 输入：全相册图片                                              │
@@ -708,7 +608,7 @@ SimilarityEngine 提供多种相似度搜索模式：
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-**函数接口设计：**
+**相似文件查找接口设计：**
 
 请求，find_similar接口：
 ```json
@@ -716,7 +616,7 @@ SimilarityEngine 提供多种相似度搜索模式：
   "id": "1234567890",
   "action": "find_similar",
   "data": {
-    "cmd": "find_similar",  // 可选，默认为find_similar
+    "cmd": "find_similar",
     "record_ids": [1001, 1002, 1003],
     "top_k": 10,
     "min_similarity": 0.5
@@ -743,9 +643,7 @@ SimilarityEngine 提供多种相似度搜索模式：
         "reference_id": 1002,
         "similar_images": [...]
       }
-    ],
-    "total_time_ms": 15.0,
-    "batch_size": 3
+    ]
   },
   "data_dbg": {
     "query_time_ms": 15.0

@@ -4,10 +4,18 @@ Markdown Report Generator for AI Engine Tests
 This module generates markdown test reports with image previews.
 """
 
+import sys
 import os
 from pathlib import Path
 from typing import Dict
 
+# Add src directory to Python path for utils module
+project_root = Path(__file__).parent.parent
+src_dir = project_root / "src"
+if str(src_dir) not in sys.path:
+    sys.path.insert(0, str(src_dir))
+
+from utils.logger import log
 
 def get_relative_path(image_path: Path, base_dir: Path) -> str:
     """Get relative path from base directory"""
@@ -362,4 +370,4 @@ def generate_markdown_report(test_results: Dict, output_path: str, test_data_dir
     with open(output_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
     
-    print(f"\n✓ Markdown report generated: {output_path}")
+    log.info(f"\n✓ Markdown report generated: {output_path}")

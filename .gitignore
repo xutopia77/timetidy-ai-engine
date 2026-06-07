@@ -57,3 +57,4 @@ tests/test.log
 test.log
 src/models-bck/*
 ai-data/*
+test_results/*

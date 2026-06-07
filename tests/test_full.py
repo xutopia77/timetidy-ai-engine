@@ -31,6 +31,12 @@ if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8")
     sys.stderr.reconfigure(encoding="utf-8")
 
+# Add src directory to Python path for utils module
+project_root = Path(__file__).parent.parent
+src_dir = project_root / "src"
+if str(src_dir) not in sys.path:
+    sys.path.insert(0, str(src_dir))
+
 from python_process import PythonProcess
 from report_generator import generate_markdown_report
 from utils.logger import log, set_log_file
@@ -133,7 +139,6 @@ def main():
     args = parser.parse_args()
     
     # Setup log file
-    project_root = Path(__file__).parent.parent
     log_dir = project_root / "test_results"
     log_dir.mkdir(exist_ok=True)
     log_file = log_dir / f"test_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"

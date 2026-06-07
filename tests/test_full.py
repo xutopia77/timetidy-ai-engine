@@ -100,32 +100,6 @@ def create_process_file(image_files: List[str], start_id: int = 1001, output_pat
     return process_file_data, record_id_to_path
 
 
-def update_process_file_with_new_hash(process_file_path: str, record_id: int, new_hash: str):
-    """
-    Update process_file.json with new file_hash (simulate Go behavior)
-    
-    Args:
-        process_file_path: path to process_file.json
-        record_id: record ID to update
-        new_hash: new file hash
-    """
-    with open(process_file_path, "r", encoding="utf-8") as f:
-        process_data = json.load(f)
-    
-    for file_record in process_data["files"]:
-        if file_record["record_id"] == record_id:
-            file_record["file_hash"] = new_hash
-            file_record["status"] = "pending"
-            break
-    
-    process_data["last_update_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-    with open(process_file_path, "w", encoding="utf-8") as f:
-        json.dump(process_data, f, indent=2, ensure_ascii=False)
-    
-    print(f"✓ Process file updated: record_id={record_id}, new_hash={new_hash}")
-
-
 def main():
     parser = argparse.ArgumentParser(
         description="Test AI Engine stdio communication (File Hash Based)"
@@ -435,72 +409,7 @@ def main():
         }
     
     print("\n" + "-"*80)
-    print("Test 5: Data Synchronization (File Hash Based)")
-    print("-"*80)
-    
-    if test_results.get("index_init", {}).get("code") == 0 and len(image_files) >= 2:
-        print("Step 1: Simulate Go updating process_file.json...")
-        
-        first_record_id = 1001
-        new_hash = "new_hash_" + str(int(time.time()))
-        
-        update_process_file_with_new_hash(
-            str(process_file_path),
-            first_record_id,
-            new_hash
-        )
-        
-        print(f"  - Updated file_hash for record_id={first_record_id}")
-        print(f"  - Old hash: {compute_file_hash(image_files[0])}")
-        print(f"  - New hash: {new_hash}")
-        
-        print("\nStep 2: Send sync_all request...")
-        
-        sync_params = {
-            "cmd": "sync_all"
-        }
-        
-        sync_response = process.send_request("sync", sync_params, timeout=60.0)
-        
-        if sync_response and sync_response.get("code") == 0:
-            sync_data = sync_response.get("data", {})
-            
-            total_files = sync_data.get("total_files", 0)
-            processed_files = sync_data.get("processed_files", 0)
-            skipped_files = sync_data.get("skipped_files", 0)
-            failed_files = sync_data.get("failed_files", 0)
-            process_time = sync_data.get("process_time_ms", 0)
-            
-            print(f"✓ Sync successful")
-            print(f"  - Total files: {total_files}")
-            print(f"  - Processed files: {processed_files} (file_hash changed)")
-            print(f"  - Skipped files: {skipped_files} (file_hash unchanged)")
-            print(f"  - Failed files: {failed_files}")
-            print(f"  - Process time: {process_time}ms")
-            
-            test_results["sync"] = {
-                "code": 0,
-                "status": "success",
-                "data": sync_data
-            }
-        else:
-            print("✗ Sync failed")
-            error = sync_response.get("status", "Unknown error") if sync_response else "No response"
-            print(f"  - Error: {error}")
-            
-            test_results["sync"] = {
-                "code": 1,
-                "status": error
-            }
-    else:
-        print("✗ Sync skipped (index not initialized or insufficient images)")
-        test_results["sync"] = {
-            "code": 1,
-            "status": "Index not initialized or insufficient images"
-        }
-    
-    print("\n" + "-"*80)
-    print("Test 6: Find Similar Images")
+    print("Test 5: Find Similar Images")
     print("-"*80)
     
     if test_results.get("index_init", {}).get("code") == 0:
@@ -705,7 +614,6 @@ def main():
     print(f"✓ Index Init: {test_results.get('index_init', {}).get('code') == 0}")
     print(f"✓ Search: {test_results.get('search', {}).get('code') == 0}")
     print(f"✓ Tag Detect: {test_results.get('tag_detect', {}).get('code') == 0}")
-    print(f"✓ Sync All: {test_results.get('sync', {}).get('code') == 0}")
     print(f"✓ Find Similar: {test_results.get('find_similar', {}).get('code') == 0}")
     print(f"✓ Detect Similar Groups: {test_results.get('detect_similar_groups', {}).get('code') == 0}")
     

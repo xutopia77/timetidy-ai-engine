@@ -1205,32 +1205,6 @@ IndexInitEngine接口：
        "query_time_ms": 2100
      }
    }
-
-SyncEngine接口：
-1. 接收JSON请求：
-   {
-     "id": "1234567890",
-     "action": "sync",
-     "data": {
-       "cmd": "sync_all"  // sync_all、get_status
-     }
-   }
-
-2. 返回JSON响应：
-   {
-     "id": "1234567890",
-     "code": 0,
-     "status": "success",
-     "data": {
-       "total_files": 10000,
-       "processed_files": 50,
-       "skipped_files": 9950,
-       "failed_files": 0
-     },
-     "data_dbg": {
-       "process_time_ms": 1234.56
-     }
-   }
 ```
 
 #### 3.2 file_hash对比同步逻辑

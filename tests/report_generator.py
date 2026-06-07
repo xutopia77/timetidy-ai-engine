@@ -36,7 +36,6 @@ def generate_markdown_report(test_results: Dict, output_path: str, test_data_dir
     index_init_result = test_results.get("index_init", {})
     search_results = test_results.get("search", {})
     tag_results = test_results.get("tag_detect", {})
-    sync_result = test_results.get("sync", {})
     find_similar_result = test_results.get("find_similar", {})
     detect_groups_result = test_results.get("detect_similar_groups", {})
     
@@ -63,12 +62,6 @@ def generate_markdown_report(test_results: Dict, output_path: str, test_data_dir
     total_count = tag_results.get("total_count", 0)
     total_tags = tag_results.get("total_tags", 0)
     lines.append(f"| Tag Detect | {tag_status} | {success_count}/{total_count} images, {total_tags} tags |")
-    
-    sync_status = "✓ Pass" if sync_result.get("code") == 0 else "✗ Fail"
-    processed_files = sync_result.get("data", {}).get("processed_files", 0)
-    skipped_files = sync_result.get("data", {}).get("skipped_files", 0)
-    total_files = sync_result.get("data", {}).get("total_files", 0)
-    lines.append(f"| Sync All | {sync_status} | {processed_files} processed, {skipped_files} skipped, {total_files} total |")
     
     find_similar_status = "✓ Pass" if find_similar_result.get("code") == 0 else "✗ Fail"
     similar_count = len(find_similar_result.get("similar_images", []))

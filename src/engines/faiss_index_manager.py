@@ -37,13 +37,10 @@ class FAISSIndexManager:
         
         self.index = None
         self.metadata = {}
-        
         self.nlist = 100
         self.nprobe = 10
         
-        log.info(f"FAISS Index Manager initialized:")
-        log.info(f"  - Index directory: {self.index_dir}")
-        log.info(f"  - Feature dimension: {feature_dim}")
+        log.info(f"FAISS Index Manager initialized: Index directory: {self.index_dir}, Feature dimension: {feature_dim}")
     
     def is_loaded(self) -> bool:
         return self.index is not None

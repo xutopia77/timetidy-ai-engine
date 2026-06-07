@@ -14,7 +14,6 @@ if sys.platform == "win32":
 from utils.logger import log
 from engines.search_engine_faiss import SearchEngine
 from engines.index_init_engine import IndexInitEngine
-from engines.sync_engine import SyncEngine
 from engines.hierarchical_tag_engine import HierarchicalTagEngine
 from engines.similarity_engine import SimilarityEngine
 
@@ -28,7 +27,6 @@ class AIEngine:
         
         self.engines["search"] = SearchEngine()
         self.engines["index_init"] = IndexInitEngine()
-        self.engines["sync"] = SyncEngine()
         self.engines["tag_detect"] = HierarchicalTagEngine()
         self.engines["find_similar"] = SimilarityEngine()
         self.engines["ping"] = PingEngine()

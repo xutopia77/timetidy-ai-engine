@@ -77,5 +77,36 @@ def set_log_level(level: int) -> None:
         handler.setLevel(level)
 
 
+def set_log_file(log_file_path: Optional[str] = None) -> None:
+    """Set log file path for file logging
+    
+    Args:
+        log_file_path: Path to log file. If None or empty, file logging is disabled.
+    """
+    # Remove existing file handlers
+    for handler in log.handlers[:]:
+        if isinstance(handler, logging.FileHandler):
+            log.removeHandler(handler)
+    
+    # Add new file handler if path is provided
+    if log_file_path:
+        # Ensure directory exists
+        log_dir = os.path.dirname(log_file_path)
+        if log_dir and not os.path.exists(log_dir):
+            os.makedirs(log_dir, exist_ok=True)
+        
+        # Create file handler
+        file_handler = logging.FileHandler(log_file_path, encoding='utf-8')
+        file_handler.setLevel(log.level)
+        
+        # Use same format as console
+        formatter = logging.Formatter(
+            fmt="[%(asctime)s.%(msecs)03d] [%(levelname)s] %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S"
+        )
+        file_handler.setFormatter(formatter)
+        log.addHandler(file_handler)
+
+
 # Global logger instance for import
 log = setup_logger()

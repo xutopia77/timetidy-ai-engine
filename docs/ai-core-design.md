@@ -108,8 +108,9 @@
 - Python通过stdout返回JSON响应（每行一个JSON对象）
 - Python通过stderr输出日志信息
 
+
+请求：
 ```json
-请求格式：
 {
   "id": "1234567890", // 请求ID（时间戳）
   "action": "search", // 操作类型，也就是对应的engine
@@ -119,8 +120,10 @@
     "top_k": 10
   }
 }
+```
 
-响应格式：
+响应：
+```json
 {
   "id": "1234567890",   // 请求ID（与请求匹配）
   "code": 0,            // 0 成功，1 失败，其他状态根据action不同可以自由扩展
@@ -202,7 +205,6 @@
 
 ```
 SearchEngine 提供两种搜索模式：
-
 ┌─────────────────────────────────────────────────────────────────┐
 │  文搜图（search）                                                │
 │  - 输入：文本查询（如"风景"、"人物"、"美食"）                       │
@@ -215,7 +217,6 @@ SearchEngine 提供两种搜索模式：
 │  - 性能：~2-5ms                                                  │
 │  - 实现：复用 SimilarityEngine.find_similar                      │
 └─────────────────────────────────────────────────────────────────┘
-
 ```
 
 **文搜图（search）：**
@@ -261,23 +262,24 @@ SearchEngine 提供两种搜索模式：
 
 **函数接口设计：**
 
+请求：
+```json
+{
+  "id": "1234567890",
+  "action": "search",
+  "data": {
+    "cmd": "search", // 可选，默认为search
+    "query": "风景照片",
+    "top_k": 100,
+    "filters": {
+      "min_similarity": 0.5
+    }
+  }
+}
 ```
-文搜图接口：
-1. 接收JSON请求：
-   {
-     "id": "1234567890",
-     "action": "search",
-     "data": {
-       "cmd": "search", // 可选，默认为search
-       "query": "风景照片",
-       "top_k": 10,
-       "filters": {
-         "min_similarity": 0.5
-       }
-     }
-   }
 
-2. 返回JSON响应：
+响应：
+```json
    {
      "id": "1234567890",
      "code": 0,
@@ -292,40 +294,43 @@ SearchEngine 提供两种搜索模式：
        "query_time_ms": 3.5
      }
    }
+// 其他接口：
+// - encode_image: 编码图片特征
+// - encode_text: 编码文本特征
+// - get_status: 获取引擎状态
+```
 
-其他接口：
-- encode_image: 编码图片特征
-- encode_text: 编码文本特征
-- get_status: 获取引擎状态
+**图搜图接口（使用 find_similar action）**：
+请求：
+```json
+{
+  "id": "1234567890",
+  "action": "find_similar",
+  "data": {
+    "cmd": "find_similar",
+    "record_id": 1001,
+    "top_k": 10,
+    "min_similarity": 0.5
+  }
+}
+```
 
-图搜图接口（使用 find_similar action）：
-1. 接收JSON请求：
-   {
-     "id": "1234567890",
-     "action": "find_similar",
-     "data": {
-       "cmd": "find_similar",
-       "record_id": 1001,
-       "top_k": 10,
-       "min_similarity": 0.5
-     }
-   }
-
-2. 返回JSON响应：
-   {
-     "id": "1234567890",
-     "code": 0,
-     "status": "success",
-     "data": {
-       "similar_images": [
-         {"record_id": 1005, "similarity": 0.95, "rank": 1},
-         {"record_id": 1020, "similarity": 0.89, "rank": 2}
-       ]
-     },
-     "data_dbg": {
-       "query_time_ms": 3.2
-     }
-   }
+响应：
+```json 
+{
+  "id": "1234567890",
+  "code": 0,
+  "status": "success",
+  "data": {
+    "similar_images": [
+      {"record_id": 1005, "similarity": 0.95, "rank": 1},
+      {"record_id": 1020, "similarity": 0.89, "rank": 2}
+    ]
+  },
+  "data_dbg": {
+    "query_time_ms": 3.2
+  }
+}
 ```
 
 **引擎复用关系：**
@@ -352,7 +357,6 @@ SimilarityEngine（相似度引擎）
 
 用户输入：
 - **record_id（必需）**：图片在FAISS索引中的ID，用于获取图片向量
-- file_path（可选）：图片路径，仅用于日志记录
 - 标签层级选择（level1, level2, attributes, all）
 
 返回结果：
@@ -362,7 +366,7 @@ SimilarityEngine（相似度引擎）
   - 属性标签（白天、夜晚、晴天、春季等）
 
 性能特点：
-- **快速**：从FAISS获取图片向量（~1ms），不编码图片（~500ms）
+- **快速**：从FAISS获取图片向量（~ 1ms），不编码图片（~ 500ms）
 - **配置调优友好**：调整配置后无需重新编码图片，适合快速迭代
 
 **设计理念：**
@@ -410,26 +414,19 @@ SimilarityEngine（相似度引擎）
 **实现方案：**
 
 核心流程：
-1. Go发送标签生成请求（通过stdin，必须提供record_id）
-2. Python接收请求并从FAISS索引获取图片向量（~1ms）
+1. Go发送标签生成请求（通过stdin）
+2. Python接收请求并从FAISS索引获取图片向量（~ 1ms）
 3. 计算图片向量与各层级标签文本向量的相似度
 4. Python返回分层结果（通过stdout）
 5. Go接收结果并处理
 
 关键设计：
-- **必须提供record_id**：从FAISS索引获取图片向量，不再编码图片
-- **性能优化**：图片向量获取从~500ms降至~1ms（提升500倍）
+- **必须提供record_id**：从FAISS索引获取图片向量，不再编码图片，FAISS中如果没有该record_id，返回空标签
 - 从JSON配置文件加载标签体系
 - 标签文本向量预计算并缓存（NPZ文件）
 - 支持正向和负向提示词（negative prompts）
-- 分层置信度阈值（level1: 0.22, level2: 0.18, attributes: 0.20）
+- 分层置信度阈值，且阈值由调用接口提供。
 - 支持用户自定义标签库
-
-性能优化：
-- **图片向量获取**：从FAISS索引获取（~1ms），不编码图片（~500ms）
-- 标签文本向量预计算并缓存（一次性，~10秒）
-- 支持正向和负向提示词机制
-- 批量标签生成支持
 
 **配置调优流程：**
 
@@ -458,8 +455,8 @@ SimilarityEngine（相似度引擎）
 
 **函数接口设计：**
 
-```
-Python处理流程：
+请求：
+```json
 1. 接收JSON请求：
    {
      "id": "1234567890",
@@ -471,60 +468,61 @@ Python处理流程：
        "tag_level": "all"       // "level1", "level2", "attributes", "all"
      }
    }
+// 参数说明：
+// - record_id（必需）：图片在FAISS索引中的ID，用于获取图片向量
+// - file_path（可选）：图片路径，仅用于日志记录
+// - tag_level（可选）：标签层级，默认为"all"
 
-参数说明：
-- record_id（必需）：图片在FAISS索引中的ID，用于获取图片向量
-- file_path（可选）：图片路径，仅用于日志记录
-- tag_level（可选）：标签层级，默认为"all"
+// 错误处理：
+// - 如果 record_id 为 None：抛出 ValueError
+// - 如果 record_id 在 FAISS 中不存在：抛出 ValueError
 
-错误处理：
-- 如果 record_id 为 None：抛出 ValueError
-- 如果 record_id 在 FAISS 中不存在：抛出 ValueError
+```
 
-2. 处理请求并返回JSON响应：
-   {
-     "id": "1234567890",
-     "code": 0,
-     "status": "success",
-     "data": {
-       "tags": [
-         {"label": "旅游出行", "confidence": 0.92},
-         {"label": "景点打卡", "confidence": 0.88},
-         {"label": "白天", "confidence": 0.90},
-         {"label": "晴天", "confidence": 0.85},
-         {"label": "夏季", "confidence": 0.78}
-       ]
-     },
-     "data_dbg": {
-       "primary_category": {
-         "id": "travel",
-         "name": "旅游出行",
-         "confidence": 0.92,
-         "level": 1
-       },
-       "level1_tags": [
-         {"id": "travel", "name": "旅游出行", "confidence": 0.92, "level": 1},
-         {"id": "outdoor", "name": "户外自然", "confidence": 0.75, "level": 1}
-       ],
-       "level2_tags": [
-         {"id": "scenic_spot", "name": "景点打卡", "confidence": 0.88, "level": 2, "parent_id": "travel"},
-         {"id": "travel_scenery", "name": "旅行风景", "confidence": 0.82, "level": 2, "parent_id": "travel"}
-       ],
-       "attribute_tags": [
-         {"id": "daytime", "name": "白天", "confidence": 0.90, "level": "attribute", "type": "time"},
-         {"id": "summer", "name": "夏季", "confidence": 0.78, "level": "attribute", "type": "season"}
-       ]
-       "process_time_ms": 50
-     }
-   }
+响应：
+```json
+{
+  "id": "1234567890",
+  "code": 0,
+  "status": "success",
+  "data": {
+    "tags": [
+      {"label": "旅游出行", "confidence": 0.92},
+      {"label": "景点打卡", "confidence": 0.88},
+      {"label": "白天", "confidence": 0.90},
+      {"label": "晴天", "confidence": 0.85},
+      {"label": "夏季", "confidence": 0.78}
+    ]
+  },
+  "data_dbg": {
+    "primary_category": {
+      "id": "travel",
+      "name": "旅游出行",
+      "confidence": 0.92,
+      "level": 1
+    },
+    "level1_tags": [
+      {"id": "travel", "name": "旅游出行", "confidence": 0.92, "level": 1},
+      {"id": "outdoor", "name": "户外自然", "confidence": 0.75, "level": 1}
+    ],
+    "level2_tags": [
+      {"id": "scenic_spot", "name": "景点打卡", "confidence": 0.88, "level": 2, "parent_id": "travel"},
+      {"id": "travel_scenery", "name": "旅行风景", "confidence": 0.82, "level": 2, "parent_id": "travel"}
+    ],
+    "attribute_tags": [
+      {"id": "daytime", "name": "白天", "confidence": 0.90, "level": "attribute", "type": "time"},
+      {"id": "summer", "name": "夏季", "confidence": 0.78, "level": "attribute", "type": "season"}
+    ],
+    "process_time_ms": 50
+  }
+}
 ```
 
 **配置文件说明version 2.0：**
 
-```
 配置文件路径：src/config/hierarchical_tags.json
-
 配置文件结构：
+```json
 {
   "version": "2.0",
   "description": "Hierarchical tag configuration for family photo album",
@@ -576,15 +574,15 @@ Python处理流程：
   }
 }
 
-用户自定义：
-- 可以修改标签名称和ID
-- 可以添加新的标签类别
-- 可以修改提示词（prompts）提高准确度
-- 可以调整阈值和top_k参数
+// 用户自定义：
+// - 可以修改标签名称和ID
+// - 可以添加新的标签类别
+// - 可以修改提示词（prompts）提高准确度
+// - 可以调整阈值和top_k参数
 ```
 
 **配置文件说明version 3.0：**
-```
+```json
 {
   "version": "3.0",
   "description": "Hierarchical tag configuration for family photo album (Chinese-CLIP optimized v3.0)",
@@ -682,9 +680,9 @@ Python处理流程：
   }
 }
 
-- 负向 Prompt 机制
-- hierarchical_filtering会确保只有一级分类命中后才计算其下的二级标签，彻底解决跨分类重叠问题
-- conflict_resolution_priority定义了分类优先级，当两个分类相似度接近时自动选择高优先级的分类
+// - 负向 Prompt 机制
+// - hierarchical_filtering会确保只有一级分类命中后才计算其下的二级标签，彻底解决跨分类重叠问题
+// - conflict_resolution_priority定义了分类优先级，当两个分类相似度接近时自动选择高优先级的分类
 
 ```
 
@@ -712,82 +710,86 @@ SimilarityEngine 提供多种相似度搜索模式：
 
 **函数接口设计：**
 
+请求，find_similar接口：
+```json
+{
+  "id": "1234567890",
+  "action": "find_similar",
+  "data": {
+    "cmd": "find_similar",  // 可选，默认为find_similar
+    "record_ids": [1001, 1002, 1003],
+    "top_k": 10,
+    "min_similarity": 0.5
+  }
+}
 ```
-find_similar接口：
-1. 接收JSON请求：
-   {
-     "id": "1234567890",
-     "action": "find_similar",
-     "data": {
-       "cmd": "find_similar",  // 可选，默认为find_similar
-       "record_ids": [1001, 1002, 1003],
-       "top_k": 10,
-       "min_similarity": 0.5
-     }
-   }
 
-2. 返回JSON响应：
-   {
-     "id": "1234567890",
-     "code": 0,
-     "status": "success",
-     "data": {
-       "results": [
-         {
-           "reference_id": 1001,
-           "similar_images": [
-             {"record_id": 1005, "similarity": 0.95, "rank": 1},
-             {"record_id": 1020, "similarity": 0.89, "rank": 2}
-           ]
-         },
-         {
-           "reference_id": 1002,
-           "similar_images": [...]
-         }
-       ],
-       "total_time_ms": 15.0,
-       "batch_size": 3
-     },
-     "data_dbg": {
-       "query_time_ms": 15.0
-     }
-   }
+响应，find_similar接口：
+```json
+{
+  "id": "1234567890",
+  "code": 0,
+  "status": "success",
+  "data": {
+    "results": [
+      {
+        "reference_id": 1001,
+        "similar_images": [
+          {"record_id": 1005, "similarity": 0.95, "rank": 1},
+          {"record_id": 1020, "similarity": 0.89, "rank": 2}
+        ]
+      },
+      {
+        "reference_id": 1002,
+        "similar_images": [...]
+      }
+    ],
+    "total_time_ms": 15.0,
+    "batch_size": 3
+  },
+  "data_dbg": {
+    "query_time_ms": 15.0
+  }
+}
+```
 
-detect_similar_groups接口：
-1. 接收JSON请求：
-   {
-     "id": "1234567890",
-     "action": "find_similar",
-     "data": {
-       "cmd": "detect_similar_groups",
-       "min_similarity": 0.9,
-       "min_group_size": 2
-     }
-   }
+请求，detect_similar_groups接口：
+```json
+{
+  "id": "1234567890",
+  "action": "find_similar",
+  "data": {
+    "cmd": "detect_similar_groups",
+    "min_similarity": 0.9,
+    "min_group_size": 2
+  }
+}
+```
 
-2. 返回JSON响应：
-   {
-     "id": "1234567890",
-     "code": 0,
-     "status": "success",
-     "data": {
-       "similar_groups": [
-         {
-           "group_id": 1,
-           "members": [1001, 1005, 1020],
-           "avg_similarity": 0.95
-         },
-         {
-           "group_id": 2,
-           "members": [1002, 1008],
-           "avg_similarity": 0.92
-         }
-       ]
-     },
-     "data_dbg": {
-       "total_time_ms": 2500.5
-     }
-   }
+响应，detect_similar_groups接口：
+```json 
+{
+  "id": "1234567890",
+  "code": 0,
+  "status": "success",
+  "data": {
+    "similar_groups": [
+      {
+        "group_id": 1,
+        "members": [1001, 1005, 1020],
+        "avg_similarity": 0.95
+      },
+      {
+        "group_id": 2,
+        "members": [1002, 1008],
+        "avg_similarity": 0.92
+      }
+    ]
+  },
+  "data_dbg": {
+    "total_time_ms": 2500.5
+  }
+}
 ```
 
 #### 2.4 图片描述生成功能（DescribeEngine）
@@ -841,9 +843,9 @@ description = "这是一张风景照片，包含山脉和日落景象，拍摄�
 
 **函数接口设计：**
 
-```
-Python处理流程：
-1. 接收JSON请求：
+请求：
+
+```json
    {
      "id": "1234567890",
      "action": "generate_description",
@@ -852,8 +854,10 @@ Python处理流程：
        "language": "zh"  // 中文描述
      }
    }
+```
 
-2. 处理请求并返回JSON响应：
+响应：
+```json
    {
      "id": "1234567890",
      "code": 0,
@@ -867,13 +871,13 @@ Python处理流程：
      }
    }
 
-设计说明：
-- data: Go需要的核心数据
-  - description: 图片描述文本
-- data_dbg: 辅助调试数据
-  - record_id: 记录ID
-  - tags_used: 使用的标签列表
-  - process_time_ms: 处理时间
+// 设计说明：
+// - data: Go需要的核心数据
+//   - description: 图片描述文本
+// - data_dbg: 辅助调试数据
+//   - record_id: 记录ID
+//   - tags_used: 使用的标签列表
+//   - process_time_ms: 处理时间
 ```
 
 #### 2.4 图片相似度计算功能（SimilarityEngine）
@@ -931,42 +935,43 @@ SimilarityEngine 提供多种相似度计算功能：
 
 **函数接口设计：**
 
+请求：
+```json
+{
+  "id": "1234567890",
+  "action": "find_similar",
+  "data": {
+    "record_id": 1001,
+    "top_k": 10,
+    "min_similarity": 0.8
+  }
+}
 ```
-Python处理流程：
-1. 接收JSON请求：
-   {
-     "id": "1234567890",
-     "action": "find_similar",
-     "data": {
-       "record_id": 1001,
-       "top_k": 10,
-       "min_similarity": 0.8
-     }
-   }
 
-2. 处理请求并返回JSON响应：
-   {
-     "id": "1234567890",
-     "code": 0,
-     "status": "success",
-     "data": {
-       "similar_images": [
-         {
-           "record_id": 1005,
-           "similarity": 0.95,
-           "rank": 1
-         },
-         {
-           "record_id": 1020,
-           "similarity": 0.89,
-           "rank": 2
-         }
-       ]
-     },
-     "data_dbg": {
-       "process_time_ms": 80
-     }
-   }
+响应：
+```json
+{
+  "id": "1234567890",
+  "code": 0,
+  "status": "success",
+  "data": {
+    "similar_images": [
+      {
+        "record_id": 1005,
+        "similarity": 0.95,
+        "rank": 1
+      },
+      {
+        "record_id": 1020,
+        "similarity": 0.89,
+        "rank": 2
+      }
+    ]
+  },
+  "data_dbg": {
+    "process_time_ms": 80
+  }
+}
 ```
 
 **全相册相似图片检测（detect_similar_groups）：**
@@ -1010,61 +1015,60 @@ Python处理流程：
 
 **函数接口设计：**
 
+请求：
+```json
+{
+  "id": "1234567890",
+  "action": "find_similar",
+  "data": {
+    "cmd": "detect_similar_groups",
+    "min_similarity": 0.9,
+    "scope": "all",
+    "record_ids": [],
+    "top_k_per_image": 20
+  }
+}
+// 参数说明：
+// - min_similarity: 相似度阈值（越高越严格）
+//   - 0.95+：几乎完全相同的图片（连拍、备份副本）
+//   - 0.90-0.95：非常相似的图片（轻微裁剪、滤镜差异）
+//   - 0.85-0.90：相似图片（同一场景不同角度）
+// - scope: 范围 "all" 全部 / "partial" 指定record_ids
+// - record_ids: scope=partial时指定的图片ID列表
+// - top_k_per_image: 每张图片搜索的近邻数（默认20）
+
 ```
-Python处理流程：
-1. 接收JSON请求：
-   {
-     "id": "1234567890",
-     "action": "find_similar",
-     "data": {
-       "cmd": "detect_similar_groups",
-       "min_similarity": 0.9,
-       "scope": "all",
-       "record_ids": [],
-       "top_k_per_image": 20
-     }
-   }
-
-参数说明：
-- min_similarity: 相似度阈值（越高越严格）
-  - 0.95+：几乎完全相同的图片（连拍、备份副本）
-  - 0.90-0.95：非常相似的图片（轻微裁剪、滤镜差异）
-  - 0.85-0.90：相似图片（同一场景不同角度）
-- scope: 范围 "all" 全部 / "partial" 指定record_ids
-- record_ids: scope=partial时指定的图片ID列表
-- top_k_per_image: 每张图片搜索的近邻数（默认20）
-
-2. 处理请求并返回JSON响应：
-   {
-     "id": "1234567890",
-     "code": 0,
-     "status": "success",
-     "data": {
-       "groups": [
-         {
-           "group_id": 1,
-           "images": [
-             {"record_id": 1001, "representative": true},
-             {"record_id": 1005, "similarity_to_representative": 0.95},
-             {"record_id": 1020, "similarity_to_representative": 0.91}
-           ],
-           "avg_similarity": 0.93
-         },
-         {
-           "group_id": 2,
-           "images": [
-             {"record_id": 2001, "representative": true},
-             {"record_id": 2003, "similarity_to_representative": 0.92}
-           ],
-           "avg_similarity": 0.92
-         }
-       ]
-     },
-     "data_dbg": {
-       "query_time_ms": 2100
-     }
-   }
-
+响应：
+```json
+{
+  "id": "1234567890",
+  "code": 0,
+  "status": "success",
+  "data": {
+    "groups": [
+      {
+        "group_id": 1,
+        "images": [
+          {"record_id": 1001, "representative": true},
+          {"record_id": 1005, "similarity_to_representative": 0.95},
+          {"record_id": 1020, "similarity_to_representative": 0.91}
+        ],
+        "avg_similarity": 0.93
+      },
+      {
+        "group_id": 2,
+        "images": [
+          {"record_id": 2001, "representative": true},
+          {"record_id": 2003, "similarity_to_representative": 0.92}
+        ],
+        "avg_similarity": 0.92
+      }
+    ]
+  },
+  "data_dbg": {
+    "query_time_ms": 2100
+  }
+}
 ```
 
 **并查集（Union-Find）算法：**

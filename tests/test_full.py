@@ -119,7 +119,7 @@ def main():
     parser.add_argument(
         "--search-query",
         type=str,
-        default="风景",
+        default="一张纯风景的照片",
         help="Search query text"
     )
     parser.add_argument(

@@ -17,7 +17,7 @@ from dataclasses import dataclass
 
 from utils.logger import log
 from engines.base import BaseEngine
-from engines.search_engine import SearchEngine
+from engines.clip_encoder import CLIPEncoder
 
 
 @dataclass
@@ -42,7 +42,7 @@ class Category:
 
 class HierarchicalTagEngine(BaseEngine):
     def __init__(self, config_path=None, top_k: int = 3):
-        self._search_engine = SearchEngine()
+        self._clip_encoder = CLIPEncoder()
         self._faiss_manager = None  # FAISS index manager
         self._config = None
         self._config_path = config_path or self._get_default_config_path()
@@ -135,7 +135,7 @@ class HierarchicalTagEngine(BaseEngine):
         if self._initialized:
             return
         
-        self._search_engine._ensure_model()
+        self._clip_encoder._ensure_model()
         self._load_config()
         self._prepare_all_prompts()
         self._initialized = True
@@ -403,7 +403,7 @@ class HierarchicalTagEngine(BaseEngine):
         """
         embeddings = []
         for text in texts:
-            emb = self._search_engine.encode_text(text)
+            emb = self._clip_encoder.encode_text(text)
             emb = emb.squeeze(0)  # Remove batch dimension: (1, 1024) -> (1024,)
             embeddings.append(emb)
         return np.array(embeddings)

@@ -108,14 +108,13 @@ Test results are saved in `test_results/` as markdown files with image previews:
 ### Text-to-Image Search
 
 ```python
-from engines.search_engine import SearchEngine
+from engines.search_engine_faiss import SearchEngine
 
 engine = SearchEngine()
 result = engine.process({
-    "action": "search_by_text",
-    "text": "可爱的小猫",
-    "file_paths": ["cat1.jpg", "cat2.jpg", "dog.jpg"],
-    "top_k": 2
+    "cmd": "search",
+    "query": "可爱的小猫",
+    "top_k": 10
 })
 ```
 

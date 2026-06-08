@@ -28,15 +28,6 @@ class RuntimeConfig:
         # Model
         self.clip_model_name: str = "ViT-H-14"
         
-        # Parameters
-        self.batch_size: int = 10
-        self.default_top_k: int = 20
-        self.default_min_similarity: float = 0.5
-        
-        # Retry
-        self.max_retries: int = 3
-        self.retry_delay: float = 0.1
-        
         # Log
         self.log_level: str = "INFO"
         self.log_file: Optional[str] = None
@@ -55,16 +46,6 @@ class RuntimeConfig:
             self.model_dir = config_dict["model_dir"]
         if "clip_model_name" in config_dict:
             self.clip_model_name = config_dict["clip_model_name"]
-        if "batch_size" in config_dict:
-            self.batch_size = config_dict["batch_size"]
-        if "default_top_k" in config_dict:
-            self.default_top_k = config_dict["default_top_k"]
-        if "default_min_similarity" in config_dict:
-            self.default_min_similarity = config_dict["default_min_similarity"]
-        if "max_retries" in config_dict:
-            self.max_retries = config_dict["max_retries"]
-        if "retry_delay" in config_dict:
-            self.retry_delay = config_dict["retry_delay"]
         if "log_level" in config_dict:
             self.log_level = config_dict["log_level"]
         if "log_file" in config_dict:
@@ -182,28 +163,3 @@ def get_model_dir() -> Path:
     if not RUNTIME_CONFIG.model_dir:
         raise ValueError("model_dir not configured. Please call cfg_set first.")
     return Path(RUNTIME_CONFIG.model_dir)
-
-
-def get_batch_size() -> int:
-    """Get batch size"""
-    return RUNTIME_CONFIG.batch_size
-
-
-def get_default_top_k() -> int:
-    """Get default top_k"""
-    return RUNTIME_CONFIG.default_top_k
-
-
-def get_default_min_similarity() -> float:
-    """Get default min_similarity"""
-    return RUNTIME_CONFIG.default_min_similarity
-
-
-def get_max_retries() -> int:
-    """Get max retries"""
-    return RUNTIME_CONFIG.max_retries
-
-
-def get_retry_delay() -> float:
-    """Get retry delay"""
-    return RUNTIME_CONFIG.retry_delay

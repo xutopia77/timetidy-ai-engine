@@ -6,7 +6,6 @@ Manages the progress file (process_file.json) for FAISS index building.
 
 import os
 import json
-import time
 import shutil
 from pathlib import Path
 from datetime import datetime
@@ -19,41 +18,30 @@ import config
 class ProgressManager:
     def __init__(self):
         self.progress_file = config.get_progress_file()
-        self.max_retries = config.get_max_retries()
-        self.retry_delay = config.get_retry_delay()
         
         log.info(f"ProgressManager initialized with file: {self.progress_file}")
     
     def load_progress(self) -> Dict:
         """
-        Load progress file with retry mechanism
+        Load progress file
         
         Returns:
             dict - progress file data
         
         Raises:
             FileNotFoundError - if progress file not found
-            ValueError - if progress file format error after all retries
+            ValueError - if progress file format error
         """
         if not self.progress_file.exists():
             raise FileNotFoundError(f"Progress file not found: {self.progress_file}")
         
-        last_error = None
-        for attempt in range(self.max_retries):
-            try:
-                with open(self.progress_file, "r", encoding="utf-8") as f:
-                    progress_data = json.load(f)
-                return progress_data
-            
-            except json.JSONDecodeError as e:
-                last_error = e
-                if attempt < self.max_retries - 1:
-                    log.warning(f"JSON decode error on attempt {attempt + 1}/{self.max_retries}, retrying in {self.retry_delay}s: {e}")
-                    time.sleep(self.retry_delay)
-                else:
-                    log.error(f"JSON decode error after {self.max_retries} attempts: {e}")
-        
-        raise ValueError(f"Progress file format error after {self.max_retries} retries: {last_error}")
+        try:
+            with open(self.progress_file, "r", encoding="utf-8") as f:
+                progress_data = json.load(f)
+            return progress_data
+        except json.JSONDecodeError as e:
+            log.error(f"JSON decode error: {e}")
+            raise ValueError(f"Progress file format error: {e}")
     
     def save_progress(self, progress_data: Dict):
         """

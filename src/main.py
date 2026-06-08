@@ -3,6 +3,8 @@ import json
 import signal
 import traceback
 import os
+import time
+import threading
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -23,6 +25,11 @@ class AIEngine:
     def __init__(self):
         self.engines = {}
         self.initialized = False
+        self.last_ping_time = time.time()  # Track last ping time
+        self.ping_timeout = 30  # 30 seconds timeout
+        self.ping_check_interval = 5  # Check every 5 seconds
+        self.ping_check_thread = None
+        self.running = True  # Flag to control thread
 
     def init(self, config_data: dict = None):
         """Initialize AI Engine with optional runtime config"""
@@ -61,6 +68,40 @@ class AIEngine:
         log.info(f"AI Engine initialized successfully. Available actions: {list(self.engines.keys())}")
         return True
 
+    def check_ping_timeout(self) -> bool:
+        """Check if ping timeout occurred
+        
+        Returns:
+            True if timeout occurred, False otherwise
+        """
+        elapsed = time.time() - self.last_ping_time
+        if elapsed > self.ping_timeout:
+            log.warning(f"Ping timeout detected: {elapsed:.1f}s > {self.ping_timeout}s, exiting...")
+            return True
+        return False
+
+    def update_ping_time(self):
+        """Update last ping time"""
+        self.last_ping_time = time.time()
+
+    def _ping_check_loop(self):
+        """Background thread to check ping timeout"""
+        while self.running:
+            time.sleep(self.ping_check_interval)
+            if self.check_ping_timeout():
+                # Timeout occurred, exit process
+                os._exit(0)  # Force exit
+
+    def start_ping_check(self):
+        """Start ping check thread"""
+        if self.ping_check_thread is None:
+            self.ping_check_thread = threading.Thread(
+                target=self._ping_check_loop,
+                daemon=True  # Daemon thread, will exit when main thread exits
+            )
+            self.ping_check_thread.start()
+            log.info(f"Ping check thread started (timeout={self.ping_timeout}s, interval={self.ping_check_interval}s)")
+
     def handle_request(self, request: dict) -> dict:
         log.info(f"request-data: {request}")
         action = request.get("action", "")
@@ -86,6 +127,7 @@ class AIEngine:
         
         # Handle ping command (no config check needed)
         if action == "ping":
+            self.update_ping_time()  # Update last ping time
             return {
                 "id": request.get("id", ""),
                 "code": 0,
@@ -157,6 +199,9 @@ class AIEngine:
 def main():
     engine = AIEngine()
     # Don't initialize at startup - wait for cfg_set
+    
+    # Start ping check thread
+    engine.start_ping_check()
     
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
 

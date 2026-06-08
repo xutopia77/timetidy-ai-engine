@@ -204,11 +204,6 @@ def main():
         "prompt_cache_dir": str(project_root / "ai-data" / "prompt_cache"),
         "model_dir": str(project_root / "src" / "models"),
         "clip_model_name": "ViT-H-14",
-        "batch_size": 10,
-        "default_top_k": 20,
-        "default_min_similarity": 0.5,
-        "max_retries": 3,
-        "retry_delay": 0.1,
         "log_level": "INFO",
         "log_file": str(log_file),
     }
@@ -220,7 +215,6 @@ def main():
     log.info(f"  - prompt_cache_dir: {config_data['prompt_cache_dir']}")
     log.info(f"  - model_dir: {config_data['model_dir']}")
     log.info(f"  - clip_model_name: {config_data['clip_model_name']}")
-    log.info(f"  - batch_size: {config_data['batch_size']}")
     
     cfg_response = process.send_request("cfg_set", config_data)
     

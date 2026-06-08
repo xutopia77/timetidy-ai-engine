@@ -48,7 +48,6 @@ class HierarchicalTagEngine(BaseEngine):
         self._config = None
         self._config_path = config.get_tag_config_file()
         self._cache_path = self._get_cache_path()
-        self._top_k = config.get_default_top_k()
         self._level1_categories = []
         self._level2_categories = {}
         self._attribute_categories = {}
@@ -466,19 +465,15 @@ class HierarchicalTagEngine(BaseEngine):
         
         return scores
     
-    def classify_level1(self, image_vector: np.ndarray, limit_top_k: bool = True) -> List[Dict]:
-        """Level1 classification with Top-K candidates
+    def classify_level1(self, image_vector: np.ndarray) -> List[Dict]:
+        """Level1 classification
         
         Args:
             image_vector: Image feature vector
-            limit_top_k: Whether to limit results to top_k (default: True)
         
         Returns:
-            Candidate list with id, name, score
+            Candidate list with id, name, score (all results)
         """
-        settings = self._config.get("settings", {})
-        top_k = settings.get("top_k_level1", self._top_k)
-        
         scores = self._compute_category_scores(
             image_vector, 
             self._level1_vectors, 
@@ -488,8 +483,6 @@ class HierarchicalTagEngine(BaseEngine):
         )
         
         sorted_indices = np.argsort(scores)[::-1]
-        if limit_top_k:
-            sorted_indices = sorted_indices[:top_k]
         
         results = []
         for idx in sorted_indices:
@@ -505,18 +498,16 @@ class HierarchicalTagEngine(BaseEngine):
     def classify_level2(
         self, 
         image_vector: np.ndarray, 
-        level1_id: str,
-        limit_top_k: bool = True
+        level1_id: str
     ) -> List[Dict]:
         """Level2 classification within a level1 category
         
         Args:
             image_vector: Image feature vector
             level1_id: Level1 category ID
-            limit_top_k: Whether to limit results to top_k (default: True)
         
         Returns:
-            Level2 category list with id, name, score
+            Level2 category list with id, name, score (all results)
         """
         categories = self._level2_categories.get(level1_id, [])
         
@@ -540,17 +531,12 @@ class HierarchicalTagEngine(BaseEngine):
             if all_neg_prompts:
                 neg_vectors = self._encode_texts_batch(all_neg_prompts)
         
-        settings = self._config.get("settings", {})
-        top_k_level2 = settings.get("top_k_level2", 2)
-        
         scores = self._compute_category_scores(
             image_vector, vectors, prompt_counts,
             neg_vectors, neg_prompt_counts,
         )
         
         sorted_indices = np.argsort(scores)[::-1]
-        if limit_top_k:
-            sorted_indices = sorted_indices[:top_k_level2]
         
         results = []
         for idx in sorted_indices:
@@ -564,19 +550,15 @@ class HierarchicalTagEngine(BaseEngine):
         
         return results
     
-    def classify_attributes(self, image_vector: np.ndarray, limit_top_k: bool = True) -> Dict[str, List[Dict]]:
+    def classify_attributes(self, image_vector: np.ndarray) -> Dict[str, List[Dict]]:
         """Attribute classification
         
         Args:
             image_vector: Image feature vector
-            limit_top_k: Whether to limit results to top_k (default: True)
         
         Returns:
-            Attribute results for each type (time, weather, season, etc.)
+            Attribute results for each type (time, weather, season, etc.) (all results)
         """
-        settings = self._config.get("settings", {})
-        top_k_attrs = settings.get("top_k_attributes", 3)
-        
         results = {}
         
         for attr_type, categories in self._attribute_categories.items():
@@ -603,8 +585,6 @@ class HierarchicalTagEngine(BaseEngine):
             )
             
             sorted_indices = np.argsort(scores)[::-1]
-            if limit_top_k:
-                sorted_indices = sorted_indices[:top_k_attrs]
             
             attr_results = []
             for idx in sorted_indices:
@@ -671,7 +651,7 @@ class HierarchicalTagEngine(BaseEngine):
         
         if tag_level in ["all", "level1"]:
             # Get all level1 candidates (no top_k limit for debug data)
-            level1_candidates = self.classify_level1(image_vector, limit_top_k=False)
+            level1_candidates = self.classify_level1(image_vector)
             
             level1_tags = []
             for candidate in level1_candidates:
@@ -689,7 +669,7 @@ class HierarchicalTagEngine(BaseEngine):
             if data_dbg.get("level1_tags"):
                 parent_id = data_dbg["level1_tags"][0]["id"]
                 # Get all level2 candidates (no top_k limit for debug data)
-                level2_results = self.classify_level2(image_vector, parent_id, limit_top_k=False)
+                level2_results = self.classify_level2(image_vector, parent_id)
                 level2_tags = []
                 for result in level2_results:
                     if result["score"] >= level2_threshold:
@@ -707,7 +687,7 @@ class HierarchicalTagEngine(BaseEngine):
         
         if tag_level in ["all", "attributes"]:
             # Get all attribute candidates (no top_k limit for debug data)
-            attributes = self.classify_attributes(image_vector, limit_top_k=False)
+            attributes = self.classify_attributes(image_vector)
             attribute_tags = []
             for attr_type, attr_results in attributes.items():
                 for attr in attr_results:

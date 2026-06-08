@@ -170,6 +170,10 @@ def main():
     if not process.start():
         log.info("\n✗ Failed to start Python process")
         return
+    
+    # Start ping keepalive to prevent timeout
+    process.start_ping_keepalive()
+    
     test_results = {}
     log.info("\n" + "-"*80)
     log.info("Test 1: Ping Communication")
@@ -650,6 +654,8 @@ def main():
             "status": "Index not initialized"
         }
     
+    # Stop ping keepalive before stopping process
+    process.stop_ping_keepalive()
     process.stop()
     
     output_dir = project_root / "test_results"

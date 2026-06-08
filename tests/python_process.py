@@ -42,6 +42,8 @@ class PythonProcess:
         self.running = False
         self.response_thread: Optional[threading.Thread] = None
         self.stderr_thread: Optional[threading.Thread] = None
+        self.ping_thread: Optional[threading.Thread] = None
+        self.ping_keepalive_running = False
     
     def start(self) -> bool:
         if self.script_path is None:
@@ -196,6 +198,45 @@ class PythonProcess:
     
     def is_running(self) -> bool:
         return self.running and self.process and self.process.poll() is None
+    
+    def _ping_keepalive_loop(self):
+        """Background thread to send ping every 5 seconds"""
+        while self.ping_keepalive_running and self.is_running():
+            try:
+                # Send ping without waiting for response
+                request_id = str(int(time.time() * 1000000))
+                request = {
+                    "id": request_id,
+                    "action": "ping",
+                    "data": {}
+                }
+                
+                request_json = json.dumps(request)
+                self.process.stdin.write(request_json + "\n")
+                self.process.stdin.flush()
+                
+            except Exception as e:
+                log.error(f"Error sending ping: {e}")
+                break
+            
+            # Sleep for 5 seconds
+            time.sleep(5)
+    
+    def start_ping_keepalive(self):
+        """Start ping keepalive thread"""
+        if self.ping_thread is None:
+            self.ping_keepalive_running = True
+            self.ping_thread = threading.Thread(
+                target=self._ping_keepalive_loop,
+                daemon=True
+            )
+            self.ping_thread.start()
+            log.info("Ping keepalive thread started (interval=5s)")
+    
+    def stop_ping_keepalive(self):
+        """Stop ping keepalive thread"""
+        self.ping_keepalive_running = False
+        self.ping_thread = None
 
 
 def test_communication():

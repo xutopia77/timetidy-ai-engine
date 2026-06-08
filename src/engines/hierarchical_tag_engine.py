@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from utils.logger import log
 from engines.base import BaseEngine
 from engines.clip_encoder import CLIPEncoder
+import config
 
 
 @dataclass
@@ -41,13 +42,13 @@ class Category:
 
 
 class HierarchicalTagEngine(BaseEngine):
-    def __init__(self, config_path=None, top_k: int = 3):
+    def __init__(self):
         self._clip_encoder = CLIPEncoder()
         self._faiss_manager = None  # FAISS index manager
         self._config = None
-        self._config_path = config_path or self._get_default_config_path()
+        self._config_path = config.get_tag_config_file()
         self._cache_path = self._get_cache_path()
-        self._top_k = top_k
+        self._top_k = config.get_default_top_k()
         self._level1_categories = []
         self._level2_categories = {}
         self._attribute_categories = {}
@@ -66,14 +67,9 @@ class HierarchicalTagEngine(BaseEngine):
         
         self._initialized = False  # Flag to avoid re-initialization
         
-    def _get_default_config_path(self):
-        script_dir = Path(__file__).parent.parent
-        return script_dir / "config" / "hierarchical_tags.json"
-    
     def _get_cache_path(self):
         """Get cache file path"""
-        script_dir = Path(__file__).parent.parent
-        cache_dir = script_dir.parent / "ai-data" / "prompt_cache"
+        cache_dir = config.get_prompt_cache_dir()
         cache_dir.mkdir(parents=True, exist_ok=True)
         return cache_dir / "hierarchical_tags_cache.npz"
     

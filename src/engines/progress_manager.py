@@ -2,87 +2,62 @@
 Progress File Manager (File Hash Based)
 
 Manages the progress file (process_file.json) for FAISS index building.
-Provides:
-1. Load progress file
-2. Save progress file
-3. Update progress stats
-4. Get pending files
-5. Reset progress file
-
-Progress File Format:
-{
-  "version": "1.0.0",
-  "batch": 10,
-  "files": [
-    {
-      "record_id": 1001,
-      "file_path": "/path/to/image.jpg",
-      "file_hash": "abc123",  // Go计算的文件hash
-      "status": "pending"     // "pending", "processing", "completed", "failed"
-    }
-  ],
-  "start_time": "2024-01-01 10:00:00",
-  "last_update_time": "2024-01-01 12:00:00"
-}
-
-Status Description:
-- pending: 待处理（未构建索引）
-- processing: 正在处理
-- completed: 已完成（已构建索引）
-- failed: 处理失败
-
-Key Design:
-- Go generates process_file.json with all files status="pending"
-- Python compares file_hash to decide whether to process
-- Python updates status during processing
-- Statistics (total_files, processed_files, etc.) are calculated in real-time to avoid data inconsistency
 """
 
 import os
 import json
+import time
+import shutil
 from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Optional
 
 from utils.logger import log
+import config
 
 
 class ProgressManager:
-    def __init__(self, progress_file_path: str = None):
-        if progress_file_path is None:
-            # project_root is ai-engine directory (parent of src)
-            project_root = Path(__file__).parent.parent.parent
-            self.progress_file = project_root / "ai-data" / "progress" / "process_file.json"
-        else:
-            self.progress_file = Path(progress_file_path)
+    def __init__(self):
+        self.progress_file = config.get_progress_file()
+        self.max_retries = config.get_max_retries()
+        self.retry_delay = config.get_retry_delay()
         
         log.info(f"ProgressManager initialized with file: {self.progress_file}")
     
     def load_progress(self) -> Dict:
         """
-        Load progress file
+        Load progress file with retry mechanism
         
         Returns:
             dict - progress file data
         
         Raises:
             FileNotFoundError - if progress file not found
-            ValueError - if progress file format error
+            ValueError - if progress file format error after all retries
         """
         if not self.progress_file.exists():
             raise FileNotFoundError(f"Progress file not found: {self.progress_file}")
         
-        try:
-            with open(self.progress_file, "r", encoding="utf-8") as f:
-                progress_data = json.load(f)
-            return progress_data
+        last_error = None
+        for attempt in range(self.max_retries):
+            try:
+                with open(self.progress_file, "r", encoding="utf-8") as f:
+                    progress_data = json.load(f)
+                return progress_data
+            
+            except json.JSONDecodeError as e:
+                last_error = e
+                if attempt < self.max_retries - 1:
+                    log.warning(f"JSON decode error on attempt {attempt + 1}/{self.max_retries}, retrying in {self.retry_delay}s: {e}")
+                    time.sleep(self.retry_delay)
+                else:
+                    log.error(f"JSON decode error after {self.max_retries} attempts: {e}")
         
-        except json.JSONDecodeError as e:
-            raise ValueError(f"Progress file format error: {e}")
+        raise ValueError(f"Progress file format error after {self.max_retries} retries: {last_error}")
     
     def save_progress(self, progress_data: Dict):
         """
-        Save progress file
+        Save progress file with atomic write
         
         Args:
             progress_data: dict - progress file data
@@ -95,12 +70,27 @@ class ProgressManager:
         
         try:
             progress_data["last_update_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            with open(self.progress_file, "w", encoding="utf-8") as f:
+            
+            # Atomic write: write to temp file first, then rename
+            temp_file = self.progress_file.with_suffix('.tmp')
+            
+            with open(temp_file, "w", encoding="utf-8") as f:
                 json.dump(progress_data, f, indent=2, ensure_ascii=False)
+            
+            # Rename temp file to target file (atomic operation on most systems)
+            shutil.move(str(temp_file), str(self.progress_file))
+            
             log.info(f"Progress file saved: {processed_files} processed, {pending_files} pending, {total_files} total")
         
         except Exception as e:
             log.error(f"Failed to save progress file: {e}")
+            # Clean up temp file if exists
+            temp_file = self.progress_file.with_suffix('.tmp')
+            if temp_file.exists():
+                try:
+                    temp_file.unlink()
+                except:
+                    pass
             raise
     
     def calculate_stats(self, progress_data: Dict) -> Dict:

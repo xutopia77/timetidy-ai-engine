@@ -33,12 +33,8 @@ class SearchEngine(BaseEngine):
     def __init__(self):
         self.clip_encoder = CLIPEncoder()
         self.index_manager = FAISSIndexManager()
-        
         self.text_cache_size = 100
-        
-        log.info(f"SearchEngine initialized:")
-        log.info(f"  - CLIP encoder ready")
-        log.info(f"  - FAISS index manager ready")
+        log.info(f"SearchEngine initialized,CLIP encoder ready,FAISS index manager ready")
     
     def _ensure_index_loaded(self):
         if not self.index_manager.is_loaded():
@@ -80,7 +76,7 @@ class SearchEngine(BaseEngine):
         if not query:
             raise ValueError("query is required")
         
-        top_k = params.get("top_k", 10)
+        top_k = params.get("top_k", 100)
         filters = params.get("filters", {})
         
         start_time = time.time()

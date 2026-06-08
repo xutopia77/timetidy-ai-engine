@@ -69,9 +69,7 @@ class UnionFind:
 class SimilarityEngine(BaseEngine):
     def __init__(self):
         self.index_manager = FAISSIndexManager()
-        
-        log.info(f"SimilarityEngine initialized:")
-        log.info(f"  - FAISS index manager ready")
+        log.info(f"SimilarityEngine initialized, FAISS index manager ready")
     
     def _ensure_index_loaded(self):
         if not self.index_manager.is_loaded():

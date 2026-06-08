@@ -17,8 +17,6 @@ import config
 from utils.logger import log
 
 
-MODEL_DIR = Path(__file__).parent.parent / "models"
-
 CLIP_IMAGE_MEAN = np.array([0.48145466, 0.4578275, 0.40821073], dtype=np.float32)
 CLIP_IMAGE_STD = np.array([0.26862954, 0.26130258, 0.27577711], dtype=np.float32)
 
@@ -29,12 +27,14 @@ class CLIPEncoder:
         self._text_session = None
         self._logit_scale = 14.29
         
+        # Get model directory from config
+        model_dir = config.get_model_dir()
         model_filenames = config.get_model_filenames()
-        self._vision_model_path = MODEL_DIR / model_filenames["vision"]
-        self._text_model_path = MODEL_DIR / model_filenames["text"]
+        self._vision_model_path = model_dir / model_filenames["vision"]
+        self._text_model_path = model_dir / model_filenames["text"]
         
         log.info(f"CLIP Encoder initialized:")
-        log.info(f"  - Model: {config.CLIP_MODEL_NAME}")
+        log.info(f"  - Model: {config.get_clip_model_name()}")
         log.info(f"  - Vision model: {model_filenames['vision']}")
         log.info(f"  - Text model: {model_filenames['text']}")
     
@@ -45,13 +45,13 @@ class CLIPEncoder:
         if not self._vision_model_path.exists():
             raise FileNotFoundError(
                 f"Vision model not found: {self._vision_model_path}\n"
-                f"Please run: python scripts/clip_model_manager.py --export --model {config.CLIP_MODEL_NAME}"
+                f"Please run: python scripts/clip_model_manager.py --export --model {config.get_clip_model_name()}"
             )
         
         if not self._text_model_path.exists():
             raise FileNotFoundError(
                 f"Text model not found: {self._text_model_path}\n"
-                f"Please run: python scripts/clip_model_manager.py --export --model {config.CLIP_MODEL_NAME}"
+                f"Please run: python scripts/clip_model_manager.py --export --model {config.get_clip_model_name()}"
             )
         
         log.info(f"Loading CLIP models...")

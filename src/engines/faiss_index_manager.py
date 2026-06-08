@@ -17,19 +17,15 @@ from typing import List, Optional
 import faiss
 
 from utils.logger import log
+import config
 
 
 class FAISSIndexManager:
-    def __init__(self, index_dir: str = None, feature_dim: int = 1024):
-        if index_dir is None:
-            # project_root is ai-engine directory (parent of src)
-            project_root = Path(__file__).parent.parent.parent
-            index_dir = str(project_root / "ai-data" / "index")
-        
-        self.index_dir = Path(index_dir)
+    def __init__(self):
+        self.index_dir = Path(config.get_index_dir())
         self.index_dir.mkdir(parents=True, exist_ok=True)
         
-        self.feature_dim = feature_dim
+        self.feature_dim = config.get_feature_dim()
         
         self.index_file = self.index_dir / "faiss_index.bin"
         self.metadata_file = self.index_dir / "ai_metadata.json"
@@ -40,7 +36,7 @@ class FAISSIndexManager:
         self.nlist = 100
         self.nprobe = 10
         
-        log.info(f"FAISS Index Manager initialized: Index directory: {self.index_dir}, Feature dimension: {feature_dim}")
+        log.info(f"FAISS Index Manager initialized: Index directory: {self.index_dir}, Feature dimension: {self.feature_dim}")
     
     def is_loaded(self) -> bool:
         return self.index is not None

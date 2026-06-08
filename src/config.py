@@ -1,25 +1,112 @@
 """
 AI Engine Configuration
+
+All configuration must be set by Go program via cfg_set command.
+No default values for paths - ensures single source of truth.
 """
+
+import os
+from pathlib import Path
+from typing import Optional
+
+
+# ============================================================================
+# Runtime Configuration (must be set by Go program)
+# ============================================================================
+
+class RuntimeConfig:
+    """Runtime configuration passed from Go program"""
+    
+    def __init__(self):
+        # Paths (all must be set by external program)
+        self.progress_file: Optional[str] = None # ai-data/progress/process_file.json
+        self.index_dir: Optional[str] = None # ai-data/index
+        self.tag_config_file: Optional[str] = None # src/config/hierarchical_tags.json
+        self.prompt_cache_dir: Optional[str] = None # ai-data/prompt_cache
+        self.model_dir: Optional[str] = None # src/models/clip_model
+        
+        # Model
+        self.clip_model_name: str = "ViT-H-14"
+        
+        # Parameters
+        self.batch_size: int = 10
+        self.default_top_k: int = 20
+        self.default_min_similarity: float = 0.5
+        
+        # Retry
+        self.max_retries: int = 3
+        self.retry_delay: float = 0.1
+        
+        # Log
+        self.log_level: str = "INFO"
+        self.log_file: Optional[str] = None
+    
+    def load_from_dict(self, config_dict: dict):
+        """Load config from dictionary (from Go program)"""
+        if "progress_file" in config_dict:
+            self.progress_file = config_dict["progress_file"]
+        if "index_dir" in config_dict:
+            self.index_dir = config_dict["index_dir"]
+        if "tag_config_file" in config_dict:
+            self.tag_config_file = config_dict["tag_config_file"]
+        if "prompt_cache_dir" in config_dict:
+            self.prompt_cache_dir = config_dict["prompt_cache_dir"]
+        if "model_dir" in config_dict:
+            self.model_dir = config_dict["model_dir"]
+        if "clip_model_name" in config_dict:
+            self.clip_model_name = config_dict["clip_model_name"]
+        if "batch_size" in config_dict:
+            self.batch_size = config_dict["batch_size"]
+        if "default_top_k" in config_dict:
+            self.default_top_k = config_dict["default_top_k"]
+        if "default_min_similarity" in config_dict:
+            self.default_min_similarity = config_dict["default_min_similarity"]
+        if "max_retries" in config_dict:
+            self.max_retries = config_dict["max_retries"]
+        if "retry_delay" in config_dict:
+            self.retry_delay = config_dict["retry_delay"]
+        if "log_level" in config_dict:
+            self.log_level = config_dict["log_level"]
+        if "log_file" in config_dict:
+            self.log_file = config_dict["log_file"]
+    
+    def is_configured(self) -> bool:
+        """Check if all required paths are configured"""
+        return all([
+            self.progress_file,
+            self.index_dir,
+            self.tag_config_file,
+            self.prompt_cache_dir,
+            self.model_dir,
+        ])
+    
+    def get_missing_config(self) -> list:
+        """Get list of missing required configurations"""
+        missing = []
+        if not self.progress_file:
+            missing.append("progress_file")
+        if not self.index_dir:
+            missing.append("index_dir")
+        if not self.tag_config_file:
+            missing.append("tag_config_file")
+        if not self.prompt_cache_dir:
+            missing.append("prompt_cache_dir")
+        if not self.model_dir:
+            missing.append("model_dir")
+        return missing
+
+
+# Global runtime config instance
+RUNTIME_CONFIG = RuntimeConfig()
+
+
+# ============================================================================
+# Model Configuration
+# ============================================================================
 
 # Model download settings
 ALLOW_MODEL_DOWNLOAD = False
 MODEL_BASE_URL = "https://hf-mirror.com/timetidy/clip-vision-onnx/resolve/main/clip_vision.onnx"
-
-# Model selection
-# Supported models: ViT-B-16, ViT-L-14, ViT-L-14-336, ViT-H-14, RN50
-# Default: RN50 (text encoder export works better)
-CLIP_MODEL_NAME = "ViT-H-14"
-
-# Model file naming convention
-# Vision model: clip_vision_{model_name}.onnx
-# Text model: clip_text_{model_name}.onnx
-# Tokenizer: tokenizer_{model_name}.json
-# Example:
-#   CLIP_MODEL_NAME = "ViT-B-16"
-#   → clip_vision_ViT_B_16.onnx
-#   → clip_text_ViT_B_16.onnx
-#   → tokenizer_ViT_B_16.json
 
 # Model feature dimensions (automatically set based on model name)
 MODEL_FEATURE_DIMS = {
@@ -30,21 +117,93 @@ MODEL_FEATURE_DIMS = {
     "RN50": 2048,
 }
 
-def get_feature_dim():
-    """Get feature dimension for current model"""
-    return MODEL_FEATURE_DIMS.get(CLIP_MODEL_NAME, 512)
 
-def get_model_filenames():
+# ============================================================================
+# Helper Functions
+# ============================================================================
+
+def get_clip_model_name() -> str:
+    """Get CLIP model name"""
+    return RUNTIME_CONFIG.clip_model_name
+
+
+def get_feature_dim() -> int:
+    """Get feature dimension for current model"""
+    model_name = get_clip_model_name()
+    return MODEL_FEATURE_DIMS.get(model_name, 512)
+
+
+def get_model_filenames() -> dict:
     """
     Get model filenames based on configured model name
     
     Returns:
         dict: Dictionary with keys: vision, text, tokenizer
     """
-    model_name = CLIP_MODEL_NAME.replace("-", "_").replace("/", "_")
+    model_name = get_clip_model_name().replace("-", "_").replace("/", "_")
     return {
         "vision": f"clip_vision_{model_name}.onnx",
         "text": f"clip_text_{model_name}.onnx",
         "tokenizer": f"tokenizer_{model_name}.json",
-        "pytorch": f"clip_cn_{CLIP_MODEL_NAME.replace('-', '-').replace('/', '-')}.pt",
+        "pytorch": f"clip_cn_{get_clip_model_name().replace('-', '-').replace('/', '-')}.pt",
     }
+
+
+def get_progress_file() -> Path:
+    """Get progress file path (must be configured)"""
+    if not RUNTIME_CONFIG.progress_file:
+        raise ValueError("progress_file not configured. Please call cfg_set first.")
+    return Path(RUNTIME_CONFIG.progress_file)
+
+
+def get_index_dir() -> str:
+    """Get index directory (must be configured)"""
+    if not RUNTIME_CONFIG.index_dir:
+        raise ValueError("index_dir not configured. Please call cfg_set first.")
+    return RUNTIME_CONFIG.index_dir
+
+
+def get_tag_config_file() -> Path:
+    """Get tag config file path (must be configured)"""
+    if not RUNTIME_CONFIG.tag_config_file:
+        raise ValueError("tag_config_file not configured. Please call cfg_set first.")
+    return Path(RUNTIME_CONFIG.tag_config_file)
+
+
+def get_prompt_cache_dir() -> Path:
+    """Get prompt cache directory (must be configured)"""
+    if not RUNTIME_CONFIG.prompt_cache_dir:
+        raise ValueError("prompt_cache_dir not configured. Please call cfg_set first.")
+    return Path(RUNTIME_CONFIG.prompt_cache_dir)
+
+
+def get_model_dir() -> Path:
+    """Get model directory (must be configured)"""
+    if not RUNTIME_CONFIG.model_dir:
+        raise ValueError("model_dir not configured. Please call cfg_set first.")
+    return Path(RUNTIME_CONFIG.model_dir)
+
+
+def get_batch_size() -> int:
+    """Get batch size"""
+    return RUNTIME_CONFIG.batch_size
+
+
+def get_default_top_k() -> int:
+    """Get default top_k"""
+    return RUNTIME_CONFIG.default_top_k
+
+
+def get_default_min_similarity() -> float:
+    """Get default min_similarity"""
+    return RUNTIME_CONFIG.default_min_similarity
+
+
+def get_max_retries() -> int:
+    """Get max retries"""
+    return RUNTIME_CONFIG.max_retries
+
+
+def get_retry_delay() -> float:
+    """Get retry delay"""
+    return RUNTIME_CONFIG.retry_delay

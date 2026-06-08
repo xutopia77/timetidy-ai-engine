@@ -4,7 +4,7 @@ Test AI Engine stdio communication (File Hash Based)
 This script simulates Go behavior and tests:
 1. Ping communication
 2. Index initialization (FAISS) with process_file.json
-3. Progress monitoring (start/stop/continue/get_progress)
+3. Progress monitoring (start/stop/get_progress)
 4. Text-to-image search (FAISS)
 5. Tag detection
 6. Data synchronization (sync_all with file_hash comparison)
@@ -141,7 +141,7 @@ def main():
     # Setup log file
     log_dir = project_root / "test_results"
     log_dir.mkdir(exist_ok=True)
-    log_file = log_dir / f"test_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+    log_file = log_dir / f"{datetime.now().strftime('%Y%m%d_%H%M%S')}-test.log"
     set_log_file(str(log_file))
     
     # Record start time
@@ -190,9 +190,57 @@ def main():
             "code": 1,
             "status": str(ping_response) if ping_response else "No response",
         }
+    
+    # === test cfg_set
+    log.info("\n" + "-"*80)
+    log.info("Test 2: Set Runtime Configuration")
+    log.info("-"*80)
+    
+    # Prepare config
+    config_data = {
+        "progress_file": str(project_root / "ai-data" / "progress" / "process_file.json"),
+        "index_dir": str(project_root / "ai-data" / "index"),
+        "tag_config_file": str(project_root / "src" / "config" / "hierarchical_tags.json"),
+        "prompt_cache_dir": str(project_root / "ai-data" / "prompt_cache"),
+        "model_dir": str(project_root / "src" / "models"),
+        "clip_model_name": "ViT-H-14",
+        "batch_size": 10,
+        "default_top_k": 20,
+        "default_min_similarity": 0.5,
+        "max_retries": 3,
+        "retry_delay": 0.1,
+        "log_level": "INFO",
+        "log_file": str(log_file),
+    }
+    
+    log.info(f"Sending cfg_set with config:")
+    log.info(f"  - progress_file: {config_data['progress_file']}")
+    log.info(f"  - index_dir: {config_data['index_dir']}")
+    log.info(f"  - tag_config_file: {config_data['tag_config_file']}")
+    log.info(f"  - prompt_cache_dir: {config_data['prompt_cache_dir']}")
+    log.info(f"  - model_dir: {config_data['model_dir']}")
+    log.info(f"  - clip_model_name: {config_data['clip_model_name']}")
+    log.info(f"  - batch_size: {config_data['batch_size']}")
+    
+    cfg_response = process.send_request("cfg_set", config_data)
+    
+    if cfg_response and cfg_response.get("code") == 0:
+        log.info("✓ Configuration set successfully")
+        test_results["cfg_set"] = {
+            "code": 0,
+            "status": "success",
+            "message": cfg_response.get("data", {}).get("message", "")
+        }
+    else:
+        log.info("✗ Configuration set failed")
+        test_results["cfg_set"] = {
+            "code": 1,
+            "status": str(cfg_response) if cfg_response else "No response",
+        }
+    
     # test index init  
     log.info("\n" + "-"*80)
-    log.info("Test 2: Index Initialization (File Hash Based)")
+    log.info("Test 3: Index Initialization (File Hash Based)")
     log.info("-"*80)
     log.info("Step 1: Simulate Go creating process_file.json...")
     
@@ -275,7 +323,7 @@ def main():
     
     # === test search
     log.info("\n" + "-"*80)
-    log.info("Test 3: Text-to-Image Search")
+    log.info("Test 4: Text-to-Image Search")
     log.info("-"*80)
     if test_results.get("index_init", {}).get("code") == 0:
         search_params = {
@@ -327,9 +375,9 @@ def main():
             "query": args.search_query
         }
 
-    # === test tag detect      
+    # === test tag detection
     log.info("\n" + "-"*80)
-    log.info("Test 4: Tag Detection")
+    log.info("Test 5: Tag Detection")
     log.info("-"*80)
     
     # Build file_path to record_id mapping from process_file.json
@@ -421,7 +469,7 @@ def main():
         }
     
     log.info("\n" + "-"*80)
-    log.info("Test 5: Find Similar Images")
+    log.info("Test 6: Find Similar Images")
     log.info("-"*80)
     
     if test_results.get("index_init", {}).get("code") == 0:
@@ -614,7 +662,7 @@ def main():
     output_dir.mkdir(exist_ok=True)
     
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    md_path = output_dir / f"ai-test-report-{timestamp}.md"
+    md_path = output_dir / f"{timestamp}-ai-test-report.md"
     
     generate_markdown_report(test_results, str(md_path), test_data_dir)
     

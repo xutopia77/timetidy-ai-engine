@@ -159,14 +159,16 @@
 
 | action | 说明 | 子操作（data.cmd） |
 |--------|------|----------------------------------------|
+| cfg_set | 配置设置 | 无 |
+| ping | 心跳检测 | 无 |
 | search | 文搜图、图搜图 | search、encode_image、encode_text、get_status |
 | index_init | 索引初始化 | start、stop、get_progress、get_status |
 | tag_detect | 标签检测 | generate_tags |
 | find_similar | 相似图搜索 | find_similar、detect_similar_groups |
-| ping | 通信测试 | 无 |
 
 优势：
 - 简单的请求-响应模型
+- 配置优先：cfg_set和ping无需配置即可执行
 
 #### 1.2 技术栈选择
 
@@ -193,6 +195,225 @@
 - 特征提取: Chinese-CLIP ONNX
 - 日志: loguru
 - 配置: pydantic
+
+#### 1.3 配置管理机制
+
+**设计原则：**
+
+1. **无默认路径**：AI引擎不包含任何硬编码的默认路径
+2. **唯一来源**：所有配置由Go程序统一管理
+3. **项目关联**：配置路径与项目路径相关联
+4. **配置检查**：未配置时拒绝执行，返回错误信息
+
+**配置参数：**
+
+| 参数 | 类型 | 说明 | 路径规则 |
+|------|------|------|----------|
+| `progress_file` | string | 进度文件路径 | `{项目路径}/ai-data/progress/process_file.json` |
+| `index_dir` | string | FAISS索引目录 | `{项目路径}/ai-data/index` |
+| `tag_config_file` | string | 标签配置文件 | `{ai_engine_path}/config/hierarchical_tags.json` |
+| `prompt_cache_dir` | string | Prompt缓存目录 | `{项目路径}/ai-data/prompt-cache` |
+| `model_dir` | string | 模型文件目录 | `{ai_engine_path}/models` |
+| `clip_model_name` | string | CLIP模型名称 | 默认: `ViT-H-14` |
+| `log_level` | string | 日志级别 | 默认: `INFO` |
+| `log_file` | string | 日志文件路径 | 可选 |
+
+**配置流程：**
+
+**延迟配置机制**：
+
+AI引擎采用延迟配置机制，确保进程常驻，随时可用：
+
+```
+1. Go程序启动
+   └─ 读取config.json
+   └─ ai.Init()
+      ├─ 启动Python进程
+      ├─ 启动ping心跳
+      └─ 检查LastPrjPath
+         ├─ 有值 → 尝试配置（configureEngine）
+         │  ├─ 成功 → 标记为已配置
+         │  └─ 失败 → 仅警告，不停止进程
+         └─ 无值 → 等待配置
+
+2. 项目打开/创建
+   └─ 设置LastPrjPath
+   └─ 保存配置
+   └─ ai.Configure()
+      └─ configureEngine()
+         ├─ 构建配置参数
+         │  ├─ progress_file = 项目路径/ai-data/progress/process_file.json
+         │  ├─ index_dir = 项目路径/ai-data/index
+         │  ├─ tag_config_file = ai_engine_path/config/hierarchical_tags.json
+         │  ├─ prompt_cache_dir = 项目路径/ai-data/prompt-cache
+         │  └─ model_dir = ai_engine_path/models
+         └─ 发送cfg_set命令
+         └─ Python进程加载配置
+         └─ 初始化各引擎组件
+
+3. AI功能调用
+   └─ Available()检查
+      ├─ 进程是否运行
+      ├─ 进程是否存活（收到ping响应）
+      └─ 返回可用状态
+   └─ 执行AI操作
+```
+
+**优势**：
+
+1. **进程常驻**：Python进程始终运行，不因配置失败而停止
+2. **延迟配置**：在项目打开时配置，支持无项目启动
+3. **灵活切换**：支持切换项目（重新配置）
+4. **容错设计**：配置失败不影响进程运行
+5. **按需配置**：只在需要时配置，避免不必要的开销
+
+**cfg_set命令协议：**
+
+请求格式：
+```json
+{
+    "id": "1234567890",
+    "action": "cfg_set",
+    "data": {
+        "progress_file": "G:/timetidy/project1/ai-data/progress/process_file.json",
+        "index_dir": "G:/timetidy/project1/ai-data/index",
+        "tag_config_file": "G:/timetidy/ai-engine/config/hierarchical_tags.json",
+        "prompt_cache_dir": "G:/timetidy/project1/ai-data/prompt-cache",
+        "model_dir": "G:/timetidy/ai-engine/models",
+        "clip_model_name": "ViT-H-14",
+        "log_level": "INFO"
+    }
+}
+```
+
+成功响应：
+```json
+{
+    "id": "1234567890",
+    "code": 0,
+    "status": "success",
+    "data": {
+        "message": "AI Engine configured"
+    }
+}
+```
+
+配置不完整响应：
+```json
+{
+    "id": "1234567890",
+    "code": 1,
+    "status": "Configuration incomplete. Missing: progress_file, index_dir"
+}
+```
+
+**配置检查机制：**
+
+Python端在执行任何操作前会检查配置完整性
+
+**未配置时的行为：**
+
+- `ping`命令：正常响应（无需配置）
+- `cfg_set`命令：正常响应（设置配置）
+- 其他命令：返回错误，提示缺少配置
+
+#### 1.4 心跳检测机制
+
+**设计目的：**
+
+防止Go程序崩溃导致Python进程成为孤儿进程，同时让Go检测Python进程是否存活，实现双向心跳检测。
+
+**Go端实现：**
+
+1. **定期发送ping**：
+   - 每5秒发送一次`ping`命令
+   - 不等待响应，直接发送
+   - 使用后台goroutine自动发送
+
+2. **检测Python存活**：
+   - 记录最后一次ping响应时间
+   - 如果10秒未收到ping响应，认为Python进程已死
+   - 在`Available()`中检查进程存活状态
+
+**Python端实现：**
+
+- 启动后台线程检测ping超时
+- 每5秒检查一次
+- 如果30秒未收到ping，安全退出进程
+
+**工作流程：**
+
+```
+Go程序                     Python进程
+  │                           │
+  ├─ Init()                   │
+  │  └─ StartPingKeepAlive()  │
+  │                           │
+  ├─ ping (每5秒) ──────────→ │
+  │                           ├─ update_ping_time()
+  │  ├─ 记录发送时间          │  └─ 返回pong
+  │  │                        │
+  │  │←───────── pong ───────┤
+  │  ├─ UpdatePingResponse()  │
+  │  └─ 更新lastPingResponse  │
+  │                           │
+  │                           ├─ 后台线程检测 (每5秒)
+  │                           │  └─ 检查 last_ping_time
+  │                           │     └─ 超过30秒 → os._exit(0)
+  │                           │
+  ├─ Available()              │
+  │  └─ CheckAlive()          │
+  │     └─ 检查lastPingResponse│
+  │        └─ 超过10秒 → false│
+  │                           │
+  ├─ Go崩溃                   │
+  │                           │
+  │                           ├─ 30秒后检测到超时
+  │                           └─ os._exit(0) 安全退出
+```
+
+**超时设置：**
+
+- **Go端**：
+  - ping间隔：5秒
+  - ping超时：10秒（未收到pong响应）
+- **Python端**：
+  - ping检测间隔：5秒
+  - ping超时：30秒（未收到ping）
+
+**优势：**
+
+1. **双向检测**：
+   - Go → Python：Go定期发送ping，Python检测超时退出
+   - Python → Go：Python响应ping，Go检测Python是否存活
+2. **防止孤儿进程**：Go崩溃后Python自动退出
+3. **自动检测故障**：Go能检测Python进程是否存活
+4. **自动清理资源**：无需手动管理进程生命周期
+5. **简单可靠**：使用操作系统进程退出机制
+6. **无阻塞**：ping发送不等待响应，不影响主流程
+
+**ping命令协议：**
+
+请求格式：
+```json
+{
+    "id": "1234567890",
+    "action": "ping",
+    "data": {}
+}
+```
+
+响应格式：
+```json
+{
+    "id": "1234567890",
+    "code": 0,
+    "status": "success",
+    "data": {
+        "message": "pong"
+    }
+}
+```
 
 ### 2. AI核心功能详细设计
 
@@ -362,51 +583,9 @@ SimilarityEngine（相似度引擎）
   - 二级分类（国内游、出境游、周边游等）
   - 属性标签（白天、夜晚、晴天、春季等）
 
-性能特点：
-- **快速**：从FAISS获取图片向量（~ 1ms），不编码图片（~ 500ms）
-- **配置调优友好**：调整配置后无需重新编码图片，适合快速迭代
-
 **设计理念：**
 
-合并分类和标签生成功能，使用统一的分层标签体系：
 
-1. 技术本质相同：
-   - 都是计算图片特征与文本特征的相似度
-   - 都基于CLIP模型
-   - 都是标签匹配过程
-
-2. 用户体验更好：
-   - 一次调用，同时得到分类和标签
-   - 分类和标签是同一体系的不同层级，逻辑清晰
-
-3. 性能更优：
-   - 一次计算，避免重复提取特征
-   - 减少内存占用和计算时间
-
-4. 易于扩展：
-   - 可以灵活添加新的标签层级
-   - 支持用户自定义标签库（JSON配置文件）
-
-**分层标签体系设计：**
-
-三级标签体系：
-
-一级分类（Level 1）- 10个大类：
-- 旅游出行、日常生活、其他
-- ...（详见配置文件）
-
-二级分类（Level 2）- 每个一级分类下的细分：
-- 旅游出行 → 国内游、出境游、周边游、景点打卡、旅行风景
-- ...（详见配置文件）
-
-属性标签（Attributes）- 时间、天气、季节等：
-- 时间：白天、夜晚、黄昏
-- ...（详见配置文件）
-
-配置文件：
-- 位置：src/config/hierarchical_tags.json
-- 用户可自定义修改标签体系
-- 支持多提示词（multiple prompts）提高准确度
 
 **实现方案：**
 
@@ -424,31 +603,12 @@ SimilarityEngine（相似度引擎）
 - 支持正向和负向提示词（negative prompts）
 - 分层置信度阈值，且阈值由调用接口提供。
 - 支持用户自定义标签库
-
-**配置调优流程：**
-
-使用FAISS向量加速配置调优：
-
-```
-第一步：生成FAISS索引（一次性）
-    ↓
-耗时：~83分钟（1万张图片）
-    ↓
-第二步：调整配置文件（hierarchical_tags.json）
-    ↓
-第三步：批量测试（使用FAISS向量）
-    ↓
-耗时：~30秒（1万张图片）
-    ↓
-第四步：查看结果，分析问题
-    ↓
-重复步骤 2-4，直到满意
-```
-
-调优优势：
-- **第一次**：生成FAISS索引（编码所有图片）
-- **后续**：每次调整配置只需~ 30秒（1万张图片）
-- **节省时间**：假设迭代10次，从~ 14小时降至~ 88分钟
+- **快速**：需要提起建立起图片FAISS索引，从FAISS获取图片向量（~ 1ms），不编码图片（~ 500ms）
+- 只需要在第一次调用时，编码prompt，后续调用直接使用缓存的prompt向量。prompt向量会保存下来，下次启动时直接使用。
+- 如果配置文件hierarchical_tags.json中的版本和prompt向量中的版本不一致，就重新编码prompt向量。方便用户自由更新标签体系，无需重新编码图片。
+- 标签配置文件分层设计。
+- 支持负向提示词（negative prompts），用于排除不相关的标签。
+- 支持多提示词（multiple prompts）提高准确度
 
 **函数接口设计：**
 
@@ -503,8 +663,6 @@ SimilarityEngine（相似度引擎）
   }
 }
 ```
-
-**配置文件说明version 2.0：**
 
 配置文件路径：src/config/hierarchical_tags.json
 **配置文件说明version 3.0：**
@@ -1349,6 +1507,11 @@ Python端保证：
 - processing: 正在处理
 - completed: 已完成（已构建索引）
 - failed: 处理失败
+
+自动重试机制：
+- Python在开始处理文件时，会自动将所有failed状态的文件重置为pending
+- 这样可以自动重试之前失败的文件，无需手动干预
+- 适用于临时性错误（如模型文件缺失、网络问题等）导致的失败
 
 重要说明：
 - Go生成process_file.json时，所有文件status统一设为"pending"

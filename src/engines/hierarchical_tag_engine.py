@@ -323,6 +323,12 @@ class HierarchicalTagEngine(BaseEngine):
         # Cache invalid or not found, encode prompts
         log.info("Encoding prompts from scratch...")
         
+        # Delete old cache file to ensure clean state
+        # This prevents loading corrupted cache if encoding fails
+        if os.path.exists(self._cache_path):
+            os.remove(self._cache_path)
+            log.info(f"Deleted old cache file: {self._cache_path}")
+        
         # 1. Prepare level1 prompts
         self._prepare_level1()
         

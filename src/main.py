@@ -103,16 +103,18 @@ class AIEngine:
             log.info(f"Ping check thread started (timeout={self.ping_timeout}s, interval={self.ping_check_interval}s)")
 
     def handle_request(self, request: dict) -> dict:
-        log.info(f"request-data: {request}")
+        
         action = request.get("action", "")
         
         # Handle cfg_set command (no config check needed)
         if action == "cfg_set":
+            log.info(f"request-data: {request}")
             config_data = request.get("data", {})
             success = self.init(config_data)
             if success:
                 return {
                     "id": request.get("id", ""),
+                    "action": action,
                     "code": 0,
                     "status": "success",
                     "data": {"message": "AI Engine configured"},
@@ -121,6 +123,7 @@ class AIEngine:
                 missing = config.RUNTIME_CONFIG.get_missing_config()
                 return {
                     "id": request.get("id", ""),
+                    "action": action,
                     "code": 1,
                     "status": f"Configuration incomplete. Missing: {', '.join(missing)}",
                 }
@@ -130,11 +133,13 @@ class AIEngine:
             self.update_ping_time()  # Update last ping time
             return {
                 "id": request.get("id", ""),
+                "action": action,
                 "code": 0,
                 "status": "success",
                 "data": {"message": "pong"},
             }
         
+        log.info(f"request-data: {request}")
         # Check if configuration is complete for other commands
         if not config.RUNTIME_CONFIG.is_configured():
             missing = config.RUNTIME_CONFIG.get_missing_config()
@@ -142,6 +147,7 @@ class AIEngine:
             log.error(error_msg)
             return {
                 "id": request.get("id", ""),
+                "action": action,
                 "code": 1,
                 "status": error_msg,
             }
@@ -154,6 +160,7 @@ class AIEngine:
                 missing = config.RUNTIME_CONFIG.get_missing_config()
                 return {
                     "id": request.get("id", ""),
+                    "action": action,
                     "code": 1,
                     "status": f"Configuration incomplete. Missing: {', '.join(missing)}",
                 }
@@ -163,6 +170,7 @@ class AIEngine:
         if engine is None:
             return {
                 "id": request.get("id", ""),
+                "action": action,
                 "code": 1,
                 "status": f"Unknown action: {action}",
             }
@@ -176,6 +184,7 @@ class AIEngine:
             
             respDat = {
                 "id": request.get("id", ""),
+                "action": action,
                 "code": 0,
                 "status": "success",
                 "data": data,
@@ -191,6 +200,7 @@ class AIEngine:
             traceback.print_exc()
             return {
                 "id": request.get("id", ""),
+                "action": action,
                 "code": 1,
                 "status": str(e),
             }

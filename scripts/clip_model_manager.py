@@ -91,12 +91,34 @@ SUPPORTED_MODELS = {
 }
 
 
-def get_model_dir() -> Path:
-    """Get the models directory path"""
+# Model tier mapping
+MODEL_TIERS = {
+    "ViT-B-16": "L",
+    "ViT-L-14": "M",
+    "ViT-L-14-336": "M",
+    "ViT-H-14": "H",
+    "RN50": "H",  # Put in H by default
+}
+
+
+def get_model_dir(model_name: str = None) -> Path:
+    """Get the models directory path for a specific model tier.
+    
+    New structure: ai-engine/models/{tier}/
+    Tier mapping: ViT-H-14 -> H, ViT-L-14 -> M, ViT-B-16 -> L
+    """
     script_dir = Path(__file__).parent
-    models_dir = script_dir.parent / "src" / "models"
-    models_dir.mkdir(exist_ok=True)
-    return models_dir
+    models_root = script_dir.parent / "models"
+    
+    if model_name and model_name in MODEL_TIERS:
+        tier = MODEL_TIERS[model_name]
+        tier_dir = models_root / tier
+        tier_dir.mkdir(parents=True, exist_ok=True)
+        return tier_dir
+    
+    # Fallback to root
+    models_root.mkdir(exist_ok=True)
+    return models_root
 
 
 def list_models():
@@ -130,7 +152,7 @@ def download_model(model_name: str, use_mirror: bool = False, mirror_name: str =
     Returns:
         Tuple of (model_path, success)
     """
-    models_dir = get_model_dir()
+    models_dir = get_model_dir(model_name)
     model_filename = f"clip_cn_{model_name.replace('-', '-').replace('/', '-')}.pt"
     model_path = models_dir / model_filename
     
@@ -203,7 +225,7 @@ def export_vision_encoder(model_name: str, model) -> Path:
     Returns:
         Path to exported ONNX file
     """
-    models_dir = get_model_dir()
+    models_dir = get_model_dir(model_name)
     onnx_filename = f"clip_vision_{model_name.replace('-', '_').replace('/', '_')}.onnx"
     onnx_path = models_dir / onnx_filename
     
@@ -256,7 +278,7 @@ def export_text_encoder(model_name: str, model) -> Path:
     Returns:
         Path to exported ONNX file
     """
-    models_dir = get_model_dir()
+    models_dir = get_model_dir(model_name)
     onnx_filename = f"clip_text_{model_name.replace('-', '_').replace('/', '_')}.onnx"
     onnx_path = models_dir / onnx_filename
     
@@ -271,7 +293,8 @@ def export_text_encoder(model_name: str, model) -> Path:
         text_encoder = model.encode_text
         model.eval()
         
-        dummy_text = torch.randint(0, 49408, (1, 77))
+        # Chinese-CLIP uses RoBERTa vocab (21128), not CLIP's 49408
+        dummy_text = torch.randint(0, 21128, (1, 77))
         
         print(f"Exporting to ONNX...")
         print(f"Note: Text encoder export may take longer than vision encoder")

@@ -18,6 +18,22 @@ import os
 from typing import Optional
 
 
+class _AbbrevFormatter(logging.Formatter):
+    _LEVEL_ABBREV = {
+        "TRACE": "T",
+        "DEBUG": "D",
+        "INFO": "I",
+        "WARNING": "W",
+        "ERROR": "E",
+        "CRITICAL": "C",
+        "FATAL": "F",
+    }
+
+    def format(self, record: logging.LogRecord) -> str:
+        record.levelname = self._LEVEL_ABBREV.get(record.levelname, record.levelname)
+        return super().format(record)
+
+
 def setup_logger(
     name: str = "ai-engine",
     level: Optional[int] = None
@@ -56,8 +72,8 @@ def setup_logger(
     handler.setLevel(level)
     
     # Format with timestamp and level
-    formatter = logging.Formatter(
-        fmt="[%(asctime)s.%(msecs)03d] [%(levelname)s] %(message)s",
+    formatter = _AbbrevFormatter(
+        fmt="[%(levelname)s][%(asctime)s.%(msecs)03d]%(message)s",
         datefmt="%Y-%m-%d %H:%M:%S"
     )
     handler.setFormatter(formatter)
@@ -100,7 +116,7 @@ def set_log_file(log_file_path: Optional[str] = None) -> None:
         file_handler.setLevel(log.level)
         
         # Use same format as console
-        formatter = logging.Formatter(
+        formatter = _AbbrevFormatter(
             fmt="[%(asctime)s.%(msecs)03d] [%(levelname)s] %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S"
         )

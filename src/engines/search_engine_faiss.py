@@ -54,9 +54,9 @@ class SearchEngine(BaseEngine):
     def process(self, params: dict) -> dict:
         cmd = params.get("cmd", "")
         
-        if cmd == "search":
+        if cmd == "search_by_text":
             return self._search_by_text(params)
-        
+
         elif cmd == "encode_image":
             return self._encode_image(params)
         

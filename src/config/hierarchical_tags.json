@@ -509,6 +509,6 @@
     "attribute_threshold": 0,
     "top_k_level1": 1,
     "top_k_level2": 2,
-    "top_k_attributes": 3
+    "top_k_attributes": 1
   }
 }

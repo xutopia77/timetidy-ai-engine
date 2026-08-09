@@ -46,17 +46,17 @@ class IndexInitEngine(BaseEngine):
     def process(self, params: dict) -> dict:
         cmd = params.get("cmd", "")
         
-        if cmd == "start":
+        if cmd == "index_start":
             rebuild = params.get("rebuild", False)
             return self._start_build(rebuild)
-        
-        elif cmd == "stop":
+
+        elif cmd == "index_stop":
             return self._stop_build()
-        
-        elif cmd == "get_progress":
+
+        elif cmd == "index_get_progress":
             return self._get_progress()
-        
-        elif cmd == "get_status":
+
+        elif cmd == "index_get_status":
             return self._get_status()
         
         else:

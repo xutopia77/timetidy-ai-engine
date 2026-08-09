@@ -126,16 +126,16 @@ class PythonProcess:
         except Exception as e:
             log.error(f"Error reading stderr: {e}")
     
-    def send_request(self, action: str, params: Dict[str, Any], timeout: float = 120.0) -> Optional[Dict]:
+    def send_request(self, cmd: str, params: Dict[str, Any], timeout: float = 120.0) -> Optional[Dict]:
         if not self.running or self.process.poll() is not None:
             log.error("Python process is not running")
             return None
-        
+
         request_id = str(int(time.time() * 1000000))
-        
+
         request = {
             "id": request_id,
-            "action": action,
+            "cmd": cmd,
             "data": params
         }
         
@@ -207,7 +207,7 @@ class PythonProcess:
                 request_id = str(int(time.time() * 1000000))
                 request = {
                     "id": request_id,
-                    "action": "ping",
+                    "cmd": "ping",
                     "data": {}
                 }
                 

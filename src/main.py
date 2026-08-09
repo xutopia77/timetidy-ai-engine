@@ -1,3 +1,16 @@
+"""
+AI Engine — stdin/stdout JSON-line protocol.
+
+Protocol (one JSON object per line):
+  Request:  {"id": "...", "cmd": "generate_tags", "data": {...}}
+  Response: {"id": "...", "cmd": "generate_tags", "code": 0, "status": "success",
+             "data": {...}, "data_dbg": {...}}
+
+All cmd values are unique (flat namespace). Routing happens here in handle_request().
+Engines receive {cmd, ...data_fields} — cmd is the wire command, used directly for
+engine-internal dispatch inside engine.process().
+"""
+
 import sys
 import json
 import signal
@@ -24,42 +37,35 @@ import config
 
 class AIEngine:
     def __init__(self):
-        self.engines = {}
+        self.engines: dict[str, object] = {}
         self.initialized = False
         self.request_queue = queue.Queue()
         self.running = True
         self.stdout_lock = threading.Lock()
         self.last_ping_time = time.time()
-        self.ping_timeout = 120  # Exit if no ping for 120s (Go process may have crashed)
+        self.ping_timeout = 120
         self.ping_check_interval = 5
 
-    def init(self, config_data: dict = None):
-        """Initialize AI Engine with optional runtime config"""
-        # Load runtime config if provided
+    # ---- init ----
+
+    def init(self, config_data: dict = None) -> bool:
+        """Initialize AI Engine with optional runtime config."""
         if config_data:
             log.info(f"Loading runtime config: {config_data}")
             config.RUNTIME_CONFIG.load_from_dict(config_data)
 
-            # Apply log settings
             if config.RUNTIME_CONFIG.log_level:
-                log_level_map = {
-                    "DEBUG": 10,
-                    "INFO": 20,
-                    "WARNING": 30,
-                    "ERROR": 40,
-                }
+                log_level_map = {"DEBUG": 10, "INFO": 20, "WARNING": 30, "ERROR": 40}
                 set_log_level(log_level_map.get(config.RUNTIME_CONFIG.log_level, 20))
 
             if config.RUNTIME_CONFIG.log_file:
                 set_log_file(config.RUNTIME_CONFIG.log_file)
 
-        # Check if configuration is complete
         if not config.RUNTIME_CONFIG.is_configured():
             missing = config.RUNTIME_CONFIG.get_missing_config()
             log.warning(f"Configuration incomplete. Missing: {', '.join(missing)}")
             return False
 
-        # Auto-detect model tier (H > M > L priority)
         if not config.RUNTIME_CONFIG.auto_detect_model():
             log.error("No model detected! Please place models in ai_engine/models/H, models/M, or models/L")
             return False
@@ -73,135 +79,117 @@ class AIEngine:
         self.engines["find_similar"] = SimilarityEngine()
 
         self.initialized = True
-        log.info(f"AI Engine initialized successfully. Available actions: {list(self.engines.keys())}")
+        log.info(f"AI Engine initialized. Available engines: {list(self.engines.keys())}")
         return True
 
+    # ---- wire helpers ----
+
     def send_response(self, response: dict):
-        """Thread-safe response sending"""
+        """Thread-safe JSON-line response to stdout."""
         with self.stdout_lock:
             sys.stdout.write(json.dumps(response) + "\n")
             sys.stdout.flush()
 
+    @staticmethod
+    def _ok(id_: str, cmd: str, data: dict = None, data_dbg: dict = None) -> dict:
+        resp: dict = {"id": id_, "cmd": cmd, "code": 0, "status": "success"}
+        if data is not None:
+            resp["data"] = data
+        if data_dbg:
+            resp["data_dbg"] = data_dbg
+        return resp
+
+    @staticmethod
+    def _err(id_: str, cmd: str, message: str) -> dict:
+        return {"id": id_, "cmd": cmd, "code": 1, "status": message}
+
+    # ---- ping (handled inline in stdin reader) ----
+
     def handle_ping(self, request: dict):
-        """Handle ping request directly in stdin reader thread for immediate response"""
         self.last_ping_time = time.time()
-        response = {
-            "id": request.get("id", ""),
-            "action": "ping",
-            "code": 0,
-            "status": "success",
-            "data": {"message": "pong"},
-        }
-        self.send_response(response)
+        self.send_response(self._ok(request.get("id", ""), "ping", {"message": "pong"}))
 
     def _ping_check_loop(self):
-        """Background thread to check ping timeout, exit if Go process may have crashed"""
+        """Background thread: exit if Go process stops sending pings."""
         while self.running:
             time.sleep(self.ping_check_interval)
             elapsed = time.time() - self.last_ping_time
             if elapsed > self.ping_timeout:
-                log.warning(f"Ping timeout: {elapsed:.1f}s > {self.ping_timeout}s, Go process may have crashed, exiting...")
+                log.warning(f"Ping timeout: {elapsed:.1f}s > {self.ping_timeout}s, exiting...")
                 os._exit(0)
 
     def start_ping_check(self):
-        """Start ping check thread"""
         t = threading.Thread(target=self._ping_check_loop, daemon=True)
         t.start()
-        log.info(f"Ping check thread started (timeout={self.ping_timeout}s, interval={self.ping_check_interval}s)")
+        log.info(f"Ping check started (timeout={self.ping_timeout}s, interval={self.ping_check_interval}s)")
 
-    def handle_request(self, request: dict) -> dict:
-        action = request.get("action", "")
+    # ---- request routing ----
 
-        # Handle cfg_set command (no config check needed)
-        if action == "cfg_set":
-            log.info(f"request-data: {request}")
-            config_data = request.get("data", {})
-            success = self.init(config_data)
-            if success:
-                return {
-                    "id": request.get("id", ""),
-                    "action": action,
-                    "code": 0,
-                    "status": "success",
-                    "data": {"message": "AI Engine configured"},
-                }
-            else:
-                missing = config.RUNTIME_CONFIG.get_missing_config()
-                return {
-                    "id": request.get("id", ""),
-                    "action": action,
-                    "code": 1,
-                    "status": f"Configuration incomplete. Missing: {', '.join(missing)}",
-                }
-
-        log.info(f"request-data: {request}")
-        # Check if configuration is complete for other commands
+    def _ensure_ready(self, req_id: str, cmd: str) -> dict | None:
+        """Check config/init; returns error dict or None if ready."""
         if not config.RUNTIME_CONFIG.is_configured():
             missing = config.RUNTIME_CONFIG.get_missing_config()
-            error_msg = f"Configuration incomplete. Missing: {', '.join(missing)}. Please call cfg_set first."
-            log.error(error_msg)
-            return {
-                "id": request.get("id", ""),
-                "action": action,
-                "code": 1,
-                "status": error_msg,
-            }
-
-        # Check if initialized
+            msg = f"Configuration incomplete. Missing: {', '.join(missing)}. Call cfg_set first."
+            log.error(msg)
+            return self._err(req_id, cmd, msg)
         if not self.initialized:
             log.info("AI Engine not initialized, initializing...")
-            success = self.init()
-            if not success:
+            if not self.init():
                 missing = config.RUNTIME_CONFIG.get_missing_config()
-                return {
-                    "id": request.get("id", ""),
-                    "action": action,
-                    "code": 1,
-                    "status": f"Configuration incomplete. Missing: {', '.join(missing)}",
-                }
+                return self._err(req_id, cmd, f"Configuration incomplete. Missing: {', '.join(missing)}")
+        return None
 
-        engine = self.engines.get(action)
+    def handle_request(self, request: dict) -> dict:
+        cmd = request.get("cmd", "")
+        req_id = request.get("id", "")
+        params = request.get("data", {}) or {}
+        params["cmd"] = cmd  # engine.process() dispatches on params["cmd"]
 
-        if engine is None:
-            return {
-                "id": request.get("id", ""),
-                "action": action,
-                "code": 1,
-                "status": f"Unknown action: {action}",
-            }
+        log.info(f"request: cmd={cmd}, id={req_id}")
 
+        # ── cfg_set (no engine needed, no config check) ──
+        if cmd == "cfg_set":
+            ok = self.init(params)
+            if ok:
+                return self._ok(req_id, cmd, {"message": "AI Engine configured"})
+            missing = config.RUNTIME_CONFIG.get_missing_config()
+            return self._err(req_id, cmd, f"Configuration incomplete. Missing: {', '.join(missing)}")
+
+        # ── guard: config + init ──
+        err = self._ensure_ready(req_id, cmd)
+        if err:
+            return err
+
+        # ── dispatch ──
         try:
-            result = engine.process(request.get("data", {}))
+            if cmd in ("generate_tags", "get_tag_config", "get_default_tag_config",
+                       "save_tag_config", "reset_tag_config"):
+                result = self.engines["tag_detect"].process(params)
 
-            # Extract data and data_dbg from result
+            elif cmd in ("search_by_text", "encode_image", "encode_text"):
+                result = self.engines["search"].process(params)
+
+            elif cmd in ("find_similar", "detect_similar_groups"):
+                result = self.engines["find_similar"].process(params)
+
+            elif cmd in ("index_start", "index_stop", "index_get_progress", "index_get_status"):
+                result = self.engines["index_init"].process(params)
+
+            else:
+                return self._err(req_id, cmd, f"Unknown cmd: {cmd}")
+
             data = result.get("data", result)
-            data_dbg = result.get("data_dbg", {})
+            data_dbg = result.get("data_dbg")
+            log.info(f"response: cmd={cmd}, id={req_id}, status=success")
+            return self._ok(req_id, cmd, data, data_dbg)
 
-            respDat = {
-                "id": request.get("id", ""),
-                "action": action,
-                "code": 0,
-                "status": "success",
-                "data": data,
-            }
-
-            # Add data_dbg if present
-            if data_dbg:
-                respDat["data_dbg"] = data_dbg
-
-            log.info(f"response-data: {respDat}")
-            return respDat
         except Exception as e:
             traceback.print_exc()
-            return {
-                "id": request.get("id", ""),
-                "action": action,
-                "code": 1,
-                "status": str(e),
-            }
+            return self._err(req_id, cmd, str(e))
+
+    # ---- worker thread ----
 
     def process_request_worker(self):
-        """Worker thread to process non-ping requests"""
         while self.running:
             try:
                 request = self.request_queue.get(timeout=1)
@@ -213,27 +201,21 @@ class AIEngine:
                 continue
             except Exception as e:
                 traceback.print_exc()
-                error_resp = {
-                    "id": "",
-                    "code": 1,
-                    "status": str(e),
-                }
-                self.send_response(error_resp)
+                self.send_response({"id": "", "code": 1, "status": str(e)})
 
+
+# ---- entry point ----
 
 def main():
     engine = AIEngine()
 
-    # Start worker thread for request processing
     worker = threading.Thread(target=engine.process_request_worker, daemon=True)
     worker.start()
 
-    # Start ping check thread (exit if Go process crashes)
     engine.start_ping_check()
 
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
 
-    # Main thread reads stdin and dispatches
     for line in sys.stdin:
         line = line.strip()
         if not line:
@@ -241,27 +223,15 @@ def main():
 
         try:
             request = json.loads(line)
-            # Ping requests are handled directly for immediate response
-            if request.get("action") == "ping":
+            if request.get("cmd") == "ping":
                 engine.handle_ping(request)
             else:
-                # Other requests are queued for processing
                 engine.request_queue.put(request)
         except json.JSONDecodeError as e:
-            error_resp = {
-                "id": "",
-                "code": 1,
-                "status": f"Invalid JSON: {e}",
-            }
-            engine.send_response(error_resp)
+            engine.send_response({"id": "", "code": 1, "status": f"Invalid JSON: {e}"})
         except Exception as e:
             traceback.print_exc()
-            error_resp = {
-                "id": "",
-                "code": 1,
-                "status": str(e),
-            }
-            engine.send_response(error_resp)
+            engine.send_response({"id": "", "code": 1, "status": str(e)})
 
 
 if __name__ == "__main__":

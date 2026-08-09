@@ -254,10 +254,9 @@ def main():
     log.info("\nStep 2: Send start request to Python...")
     
     start_params = {
-        "cmd": "start",
         "rebuild": True
     }
-    start_response = process.send_request("index_init", start_params, timeout=300.0)
+    start_response = process.send_request("index_start", start_params, timeout=300.0)
     if start_response and start_response.get("code") == 0:
         start_data = start_response.get("data", {})
         log.info(f"✓ Index build started, Total files: {start_data.get('total_files', 0)}, Status: {start_data.get('status', '')}")
@@ -266,11 +265,8 @@ def main():
         max_wait_time = 300
         start_time = time.time()
         while time.time() - start_time < max_wait_time:
-            progress_params = {
-                "cmd": "get_progress"
-            }
-            
-            progress_response = process.send_request("index_init", progress_params)
+            progress_params: dict = {}
+            progress_response = process.send_request("index_get_progress", progress_params)
             if progress_response and progress_response.get("code") == 0:
                 progress_data = progress_response.get("data", {})
                 
@@ -325,12 +321,11 @@ def main():
     log.info("-"*80)
     if test_results.get("index_init", {}).get("code") == 0:
         search_params = {
-            "cmd": "search",
             "query": args.search_query,
             "top_k": 20
         }
         log.info(f"Query: \"{args.search_query}\", Top-K: 20, Searching in indexed images...")
-        search_response = process.send_request("search", search_params, timeout=30.0)
+        search_response = process.send_request("search_by_text", search_params, timeout=30.0)
         if search_response and search_response.get("code") == 0:
             search_data = search_response.get("data", {})
             results = search_data.get("results", [])
@@ -407,11 +402,10 @@ def main():
                 continue
             
             tag_params = {
-                "cmd": "generate_tags",
                 "record_id": record_id,
                 "tag_level": "all"
             }
-            tag_response = process.send_request("tag_detect", tag_params)
+            tag_response = process.send_request("generate_tags", tag_params)
             
             if tag_response and tag_response.get("code") == 0:
                 tag_data = tag_response.get("data", {})
@@ -474,12 +468,11 @@ def main():
         log.info("Step 1: Find similar images by record_ids...")
         # test find similar  
         find_similar_params = {
-            "cmd": "find_similar",
             "record_ids": [1001],
             "top_k": args.top_k,
             "min_similarity": 0.5
         }
-        
+
         similar_response = process.send_request("find_similar", find_similar_params, timeout=30.0)
         
         if similar_response and similar_response.get("code") == 0:
@@ -540,13 +533,12 @@ def main():
         log.info("Step 1: Detect similar groups across all images...")
         # test detect similar groups  
         detect_groups_params = {
-            "cmd": "detect_similar_groups",
             "min_similarity": 0.85,
             "scope": "all",
             "top_k_per_image": 10
         }
-        
-        detect_response = process.send_request("find_similar", detect_groups_params, timeout=60.0)
+
+        detect_response = process.send_request("detect_similar_groups", detect_groups_params, timeout=60.0)
         
         if detect_response and detect_response.get("code") == 0:
             detect_data = detect_response.get("data", {})
@@ -613,14 +605,13 @@ def main():
             sample_ids = list(record_id_to_path.keys())[:5]
             
             detect_partial_params = {
-                "cmd": "detect_similar_groups",
                 "min_similarity": 0.8,
                 "scope": "partial",
                 "record_ids": sample_ids,
                 "top_k_per_image": 5
             }
-            
-            detect_partial_response = process.send_request("find_similar", detect_partial_params, timeout=30.0)
+
+            detect_partial_response = process.send_request("detect_similar_groups", detect_partial_params, timeout=30.0)
             
             if detect_partial_response and detect_partial_response.get("code") == 0:
                 partial_data = detect_partial_response.get("data", {})

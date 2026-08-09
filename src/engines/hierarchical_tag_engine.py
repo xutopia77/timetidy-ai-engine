@@ -723,14 +723,13 @@ class HierarchicalTagEngine(BaseEngine):
             data_dbg["attribute_tags"] = attribute_tags
         
         # Build simplified tags list for data.tags
-        # Only keep top-1 for level1 and level2, all for attributes
         all_tags = []
         if data_dbg.get("level1_tags"):
-            all_tags.append(data_dbg["level1_tags"][0])  # Only top-1
+            all_tags.extend(data_dbg["level1_tags"])
         if data_dbg.get("level2_tags"):
-            all_tags.append(data_dbg["level2_tags"][0])  # Only top-1
-        if data_dbg.get("attribute_tags") and False:
-            all_tags.extend(data_dbg["attribute_tags"])  # All attributes
+            all_tags.extend(data_dbg["level2_tags"])
+        if data_dbg.get("attribute_tags"):
+            all_tags.extend(data_dbg["attribute_tags"])
         
         all_tags.sort(key=lambda x: x["confidence"], reverse=True)
         
@@ -805,18 +804,18 @@ class HierarchicalTagEngine(BaseEngine):
         cmd = params.get("cmd", "generate_tags")
         
         # Config management commands (don't require model initialization)
-        if cmd == "get_config":
+        if cmd == "get_tag_config":
             return {"data": self.get_config()}
-        
-        if cmd == "get_default_config":
+
+        if cmd == "get_default_tag_config":
             return {"data": self.get_default_config()}
-        
-        if cmd == "save_config":
+
+        if cmd == "save_tag_config":
             config_data = params.get("config_data", {})
             result = self.save_config(config_data)
             return {"data": result}
-        
-        if cmd == "reset_config":
+
+        if cmd == "reset_tag_config":
             result = self.reset_config()
             return {"data": result}
         

@@ -74,14 +74,18 @@ class HierarchicalTagEngine(BaseEngine):
     
     def _load_config(self):
         if self._config is None:
+            # Fallback to default config if user config not found
             if not os.path.exists(self._config_path):
-                raise FileNotFoundError(
-                    f"Hierarchical tag config not found: {self._config_path}\n"
-                    f"Please create the configuration file first."
+                default_path = os.path.join(
+                    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                    "config", "hierarchical_tags-default.json"
                 )
-            
-            with open(self._config_path, "r", encoding="utf-8") as f:
-                self._config = json.load(f)
+                log.info(f"User config not found, loading default: {default_path}")
+                with open(default_path, "r", encoding="utf-8") as f:
+                    self._config = json.load(f)
+            else:
+                with open(self._config_path, "r", encoding="utf-8") as f:
+                    self._config = json.load(f)
             
             self._parse_config()
             
@@ -176,8 +180,12 @@ class HierarchicalTagEngine(BaseEngine):
         try:
             cache = np.load(self._cache_path, allow_pickle=True)
             
-            # 1. Check config file modification time
-            config_mtime = os.path.getmtime(self._config_path)
+            # 1. Check config file modification time (fallback to default if user config not found)
+            config_path = self._config_path if os.path.exists(self._config_path) else os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                "config", "hierarchical_tags-default.json"
+            )
+            config_mtime = os.path.getmtime(config_path)
             if float(cache["config_mtime"]) < config_mtime:
                 log.info("Cache invalid: config file updated")
                 return False
@@ -238,9 +246,14 @@ class HierarchicalTagEngine(BaseEngine):
     def _save_prompt_cache(self):
         """Save prompt vectors to cache"""
         try:
+            # Use user config mtime if exists, otherwise default config mtime
+            config_path = self._config_path if os.path.exists(self._config_path) else os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                "config", "hierarchical_tags-default.json"
+            )
             cache_data = {
                 # Metadata
-                "config_mtime": os.path.getmtime(self._config_path),
+                "config_mtime": os.path.getmtime(config_path),
                 "version": self._config.get("version", "unknown"),
                 # Level1
                 "level1_vectors": self._level1_vectors,
@@ -738,9 +751,77 @@ class HierarchicalTagEngine(BaseEngine):
             "data_dbg": data_dbg
         }
         
+    def get_config(self) -> dict:
+        """Get current tag configuration (user config or default)"""
+        self._load_config()
+        return self._config
+
+    def get_default_config(self) -> dict:
+        """Get default tag configuration"""
+        default_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "config", "hierarchical_tags-default.json"
+        )
+        with open(default_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+    def save_config(self, config_data: dict) -> dict:
+        """Save user tag configuration and reload"""
+        with open(self._config_path, "w", encoding="utf-8") as f:
+            json.dump(config_data, f, ensure_ascii=False, indent=2)
+        
+        # Reload config and invalidate cache
+        self._config = None
+        self._initialized = False
+        self._level1_vectors = None
+        self._level2_cache = {}
+        self._attribute_cache = {}
+        
+        # Delete old cache to force re-encoding
+        if os.path.exists(self._cache_path):
+            os.remove(self._cache_path)
+        
+        return {"message": "Config saved successfully", "path": self._config_path}
+
+    def reset_config(self) -> dict:
+        """Reset to default configuration (delete user config file)"""
+        if os.path.exists(self._config_path):
+            os.remove(self._config_path)
+        
+        # Reload config and invalidate cache
+        self._config = None
+        self._initialized = False
+        self._level1_vectors = None
+        self._level2_cache = {}
+        self._attribute_cache = {}
+        
+        # Delete old cache
+        if os.path.exists(self._cache_path):
+            os.remove(self._cache_path)
+        
+        return {"message": "Config reset to default"}
+
     def process(self, params: dict) -> dict:
-        self._ensure_model()
         cmd = params.get("cmd", "generate_tags")
+        
+        # Config management commands (don't require model initialization)
+        if cmd == "get_config":
+            return {"data": self.get_config()}
+        
+        if cmd == "get_default_config":
+            return {"data": self.get_default_config()}
+        
+        if cmd == "save_config":
+            config_data = params.get("config_data", {})
+            result = self.save_config(config_data)
+            return {"data": result}
+        
+        if cmd == "reset_config":
+            result = self.reset_config()
+            return {"data": result}
+        
+        # Tag detection requires model initialization
+        self._ensure_model()
         if cmd == "generate_tags":
             file_path = params.get("file_path", "")
             record_id = params.get("record_id", None)

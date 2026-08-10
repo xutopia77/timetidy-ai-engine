@@ -505,8 +505,8 @@
   },
   "settings": {
     "level1_threshold": 0,
-    "level2_threshold": 0,
-    "attribute_threshold": 0,
+    "level2_threshold": 0.1,
+    "attribute_threshold": 0.1,
     "top_k_level1": 1,
     "top_k_level2": 2,
     "top_k_attributes": 1

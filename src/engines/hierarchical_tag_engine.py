@@ -459,29 +459,31 @@ class HierarchicalTagEngine(BaseEngine):
         Returns:
             List of adjusted similarity scores per category
         """
-        neg_weight = 0.5  # Weight for negative prompt penalty
-        
+        neg_weight = 0.2  # Weight for negative prompt penalty
+
         similarities = vectors @ image_vector
-        
+
         scores = []
         start_idx = 0
         for i, count in enumerate(prompt_counts):
             end_idx = start_idx + count
-            avg_score = float(similarities[start_idx:end_idx].mean())
-            
+            # Use the best-matching positive prompt (max) instead of the mean,
+            # so a single strong match isn't diluted by weaker prompts.
+            pos_score = float(similarities[start_idx:end_idx].max())
+
             # Apply negative prompt penalty
-            if (neg_vectors is not None 
-                    and neg_prompt_counts is not None 
+            if (neg_vectors is not None
+                    and neg_prompt_counts is not None
                     and neg_prompt_counts[i] > 0):
                 neg_start = sum(neg_prompt_counts[:i])
                 neg_end = neg_start + neg_prompt_counts[i]
                 neg_similarities = neg_vectors[neg_start:neg_end] @ image_vector
                 neg_score = float(neg_similarities.mean())
-                avg_score = avg_score - neg_weight * neg_score
-            
-            scores.append(avg_score)
+                pos_score = pos_score - neg_weight * neg_score
+
+            scores.append(pos_score)
             start_idx = end_idx
-        
+
         return scores
     
     def classify_level1(self, image_vector: np.ndarray) -> List[Dict]:
@@ -654,24 +656,29 @@ class HierarchicalTagEngine(BaseEngine):
         level1_threshold = settings.get("level1_threshold", 0)
         level2_threshold = settings.get("level2_threshold", 0)
         attribute_threshold = settings.get("attribute_threshold", 0)
-        log.info(f"Thresholds: level1={level1_threshold}, level2={level2_threshold}, attributes={attribute_threshold}, Generating tags for record_id: {record_id}")
-        
+        top_k_level1 = settings.get("top_k_level1", 1)
+        top_k_level2 = settings.get("top_k_level2", 2)
+        top_k_attributes = settings.get("top_k_attributes", 1)
+        log.info(f"Thresholds: level1={level1_threshold}, level2={level2_threshold}, attributes={attribute_threshold}, "
+                 f"top_k: level1={top_k_level1}, level2={top_k_level2}, attributes={top_k_attributes}, "
+                 f"Generating tags for record_id: {record_id}")
+
         # Get image vector from FAISS (fast lookup)
         image_vector = self._get_vector_from_faiss(record_id)
         log.debug(f"Image vector shape: {image_vector.shape}")
-        
+
         data_dbg = {
             "record_id": record_id,
         }
-        
+
         # Add file_path to debug data if provided
         if file_path:
             data_dbg["file_path"] = str(file_path)
-        
+
         if tag_level in ["all", "level1"]:
-            # Get all level1 candidates (no top_k limit for debug data)
+            # classify_level1 returns candidates sorted by score desc
             level1_candidates = self.classify_level1(image_vector)
-            
+
             level1_tags = []
             for candidate in level1_candidates:
                 if candidate["score"] >= level1_threshold:
@@ -681,13 +688,16 @@ class HierarchicalTagEngine(BaseEngine):
                         "confidence": round(candidate["score"], 4),
                         "level": 1,
                     })
-            
+
+            # Apply top_k for level1
+            level1_tags = level1_tags[:top_k_level1]
+
             data_dbg["level1_tags"] = level1_tags
-            
+
         if tag_level in ["all", "level2"]:
             if data_dbg.get("level1_tags"):
                 parent_id = data_dbg["level1_tags"][0]["id"]
-                # Get all level2 candidates (no top_k limit for debug data)
+                # classify_level2 returns results sorted by score desc
                 level2_results = self.classify_level2(image_vector, parent_id)
                 level2_tags = []
                 for result in level2_results:
@@ -699,18 +709,24 @@ class HierarchicalTagEngine(BaseEngine):
                             "level": 2,
                             "parent_id": parent_id,
                         })
+
+                # Apply top_k for level2
+                level2_tags = level2_tags[:top_k_level2]
+
                 data_dbg["level2_tags"] = level2_tags
             else:
                 log.warning("No primary category, skipping level2")
                 data_dbg["level2_tags"] = []
-        
+
         if tag_level in ["all", "attributes"]:
-            # Get all attribute candidates (no top_k limit for debug data)
+            # classify_attributes returns per-type results sorted by score desc
             attributes = self.classify_attributes(image_vector)
             attribute_tags = []
             for attr_type, attr_results in attributes.items():
+                # Apply top_k per attribute type
+                kept = 0
                 for attr in attr_results:
-                    if attr["score"] >= attribute_threshold:
+                    if attr["score"] >= attribute_threshold and kept < top_k_attributes:
                         attribute_tags.append({
                             "id": attr["id"],
                             "name": attr["name"],
@@ -718,7 +734,8 @@ class HierarchicalTagEngine(BaseEngine):
                             "level": "attribute",
                             "type": attr_type,
                         })
-            
+                        kept += 1
+
             attribute_tags.sort(key=lambda x: x["confidence"], reverse=True)
             data_dbg["attribute_tags"] = attribute_tags
         

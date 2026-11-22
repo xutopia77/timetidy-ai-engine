@@ -2,7 +2,8 @@
 FAISS Index Manager for AI Engine
 
 This module manages FAISS vector index:
-- IndexIDMap2(IndexIVFFlat) for 1万-10万张图片
+- IndexIDMap2(IndexFlatIP) for <10000 images (brute force, exact search)
+- IndexIDMap2(IndexIVFFlat) for >=10000 images (approximate search, faster)
 - Supports deletion and custom IDs
 - Persistent index files
 - Index initialization, training, and maintenance
@@ -35,6 +36,7 @@ class FAISSIndexManager:
         self.metadata = {}
         self.nlist = 100
         self.nprobe = 10
+        self.ivf_threshold = 10000
         
         log.info(f"FAISS Index Manager initialized: Index directory: {self.index_dir}, Feature dimension: {self.feature_dim}")
     
@@ -43,7 +45,9 @@ class FAISSIndexManager:
     
     def create_empty_index(self) -> bool:
         """
-        Create an empty index that can add vectors one by one
+        Create an empty index that can add vectors one by one.
+        Uses IndexFlatIP (brute force) which doesn't require training
+        and guarantees 100% recall rate.
         
         Returns:
             bool - True if successful, False otherwise
@@ -51,28 +55,12 @@ class FAISSIndexManager:
         try:
             log.info(f"Creating empty FAISS index...")
             
-            # For small datasets, use IndexFlatIP (brute force) which doesn't require training
-            # This is more reliable and faster for <10000 images
-            quantizer = faiss.IndexFlatIP(self.feature_dim)
-            index_ivf = faiss.IndexIVFFlat(quantizer, self.feature_dim, self.nlist, faiss.METRIC_INNER_PRODUCT)
-            
-            # Enable direct_map with Hashtable for ID-based operations
-            # Hashtable supports remove operations with IDSelectorArray
-            index_ivf.direct_map = faiss.DirectMap()
-            index_ivf.direct_map.type = faiss.DirectMap.Hashtable
-            
-            # Use more training points: at least 39 * nlist as recommended by FAISS
-            n_train = max(self.nlist * 40, 1000)  # At least 1000 training points
-            dummy_features = np.random.rand(n_train, self.feature_dim).astype('float32')
-            log.info(f"Training index with {n_train} dummy vectors...")
-            index_ivf.train(dummy_features)
-            
-            # Use IndexIVFFlat directly (not IndexIDMap2) for better remove/add support
-            self.index = index_ivf
+            flat_index = faiss.IndexFlatIP(self.feature_dim)
+            self.index = faiss.IndexIDMap2(flat_index)
             
             self.metadata = {}
             
-            log.info(f"Empty index created successfully")
+            log.info(f"Empty IndexFlatIP index created (brute force mode)")
             
             return True
             
@@ -125,25 +113,27 @@ class FAISSIndexManager:
                 log.info(f"Feature dimension mismatch: {features_array.shape[1]} vs {self.feature_dim}")
                 return False
             
-            nlist = min(self.nlist, max(1, int(np.sqrt(len(features)))))
-            
-            log.info(f"Creating IndexIVFFlat with nlist={nlist}...")
-            quantizer = faiss.IndexFlatIP(self.feature_dim)
-            index_ivf = faiss.IndexIVFFlat(quantizer, self.feature_dim, nlist, faiss.METRIC_INNER_PRODUCT)
-            
-            index_ivf.direct_map = faiss.DirectMap()
-            index_ivf.direct_map.type = faiss.DirectMap.Array
-            
-            log.info(f"Training index with {len(features)} vectors...")
-            index_ivf.train(features_array)
-            
-            log.info(f"Creating IndexIDMap2 wrapper...")
-            self.index = faiss.IndexIDMap2(index_ivf)
-            
             ids_array = np.array(record_ids, dtype=np.int64)
             
-            log.info(f"Adding {len(features)} vectors to index...")
-            self.index.add_with_ids(features_array, ids_array)
+            if len(features) < self.ivf_threshold:
+                log.info(f"Using IndexFlatIP (brute force) for {len(features)} images (< {self.ivf_threshold})")
+                flat_index = faiss.IndexFlatIP(self.feature_dim)
+                self.index = faiss.IndexIDMap2(flat_index)
+                self.index.add_with_ids(features_array, ids_array)
+            else:
+                nlist = min(self.nlist, max(1, int(np.sqrt(len(features)))))
+                log.info(f"Using IndexIVFFlat for {len(features)} images (nlist={nlist})")
+                quantizer = faiss.IndexFlatIP(self.feature_dim)
+                index_ivf = faiss.IndexIVFFlat(quantizer, self.feature_dim, nlist, faiss.METRIC_INNER_PRODUCT)
+                
+                index_ivf.direct_map = faiss.DirectMap()
+                index_ivf.direct_map.type = faiss.DirectMap.Array
+                
+                log.info(f"Training IVF index with {len(features)} real vectors...")
+                index_ivf.train(features_array)
+                
+                self.index = faiss.IndexIDMap2(index_ivf)
+                self.index.add_with_ids(features_array, ids_array)
             
             self.metadata = {}
             for i, record_id in enumerate(record_ids):
@@ -203,24 +193,13 @@ class FAISSIndexManager:
         query_array = np.array(query_features, dtype=np.float32)
         
         try:
-            # Try to set nprobe for IVF index
             if hasattr(self.index, 'index'):
-                # IndexIDMap2 wrapper - need to downcast inner index
-                try:
-                    ivf_index = faiss.downcast_index(self.index.index)
-                    if hasattr(ivf_index, 'nprobe'):
-                        ivf_index.nprobe = min(self.nprobe, ivf_index.nlist)
-                        log.info(f"Set nprobe={ivf_index.nprobe} for IVF index (nlist={ivf_index.nlist})")
-                except Exception as e:
-                    log.error(f"Warning: Failed to downcast index: {e}")
-            elif hasattr(self.index, 'nprobe'):
-                self.index.nprobe = self.nprobe
-                log.info(f"Set nprobe={self.nprobe} for index")
-            else:
-                log.info(f"Index does not have nprobe attribute, using default settings")
+                inner = self.index.index
+                if hasattr(inner, 'nprobe'):
+                    inner.nprobe = min(self.nprobe, inner.nlist if hasattr(inner, 'nlist') else self.nprobe)
+                    log.info(f"Set nprobe={inner.nprobe} for IVF index")
         except (AttributeError, TypeError) as e:
             log.error(f"Warning: Failed to set nprobe parameter: {e}")
-            log.info(f"Continuing search with default nprobe settings") 
         
         
         distances, ids = self.index.search(query_array, top_k)
@@ -316,26 +295,13 @@ class FAISSIndexManager:
                 log.info(f"Record {record_id} is marked as deleted")
                 return None
             
-            if hasattr(self.index, 'index') and hasattr(self.index.index, 'direct_map'):
-                inner_index = self.index.index
-                
-                try:
-                    inner_id = inner_index.direct_map.get(record_id)
-                    if inner_id >= 0:
-                        vector = inner_index.reconstruct(inner_id)
-                        vector = np.array(vector, dtype=np.float32).reshape(1, -1)
-                        log.info(f"Retrieved vector for record {record_id} via direct_map, shape: {vector.shape}")
-                        return vector
-                except Exception as e:
-                    log.error(f"direct_map.get failed: {e}")
-            
             try:
                 vector = self.index.reconstruct(record_id)
                 vector = np.array(vector, dtype=np.float32).reshape(1, -1)
-                log.info(f"Retrieved vector for record {record_id} using reconstruct, shape: {vector.shape}")
+                log.info(f"Retrieved vector for record {record_id}, shape: {vector.shape}")
                 return vector
             except Exception as e:
-                log.error(f"reconstruct failed: {e}")
+                log.error(f"reconstruct failed for record {record_id}: {e}")
             
             log.error(f"Failed to retrieve vector for record {record_id}")
             return None
@@ -446,13 +412,26 @@ class FAISSIndexManager:
         return True
     
     def get_status(self) -> dict:
+        index_type = "unknown"
+        if self.is_loaded():
+            inner = getattr(self.index, 'index', None)
+            if inner is not None:
+                if isinstance(inner, faiss.IndexFlatIP):
+                    index_type = "IndexFlatIP (brute force)"
+                elif isinstance(inner, faiss.IndexIVFFlat):
+                    index_type = f"IndexIVFFlat (nlist={getattr(inner, 'nlist', 'unknown')})"
+            elif isinstance(self.index, faiss.IndexFlatIP):
+                index_type = "IndexFlatIP (brute force)"
+        
         return {
             "loaded": self.is_loaded(),
+            "index_type": index_type,
             "total_vectors": self.index.ntotal if self.is_loaded() else 0,
             "metadata_entries": len(self.metadata),
             "index_file": str(self.index_file),
             "metadata_file": str(self.metadata_file),
             "feature_dim": self.feature_dim,
             "nlist": self.nlist,
-            "nprobe": self.nprobe
+            "nprobe": self.nprobe,
+            "ivf_threshold": self.ivf_threshold
         }

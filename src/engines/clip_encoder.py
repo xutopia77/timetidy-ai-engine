@@ -75,7 +75,16 @@ class CLIPEncoder:
     
     def _preprocess_image(self, image_path: str) -> np.ndarray:
         img = Image.open(image_path).convert("RGB")
-        img = img.resize((224, 224), Image.BICUBIC)
+        
+        w, h = img.size
+        short_side = min(w, h)
+        scale = 224 / short_side
+        new_w, new_h = int(w * scale), int(h * scale)
+        img = img.resize((new_w, new_h), Image.BILINEAR)
+        left = (new_w - 224) // 2
+        top = (new_h - 224) // 2
+        img = img.crop((left, top, left + 224, top + 224))
+        
         img_array = np.array(img, dtype=np.float32)
         img_array = (img_array / 255.0 - CLIP_IMAGE_MEAN) / CLIP_IMAGE_STD
         img_array = np.transpose(img_array, (2, 0, 1))
